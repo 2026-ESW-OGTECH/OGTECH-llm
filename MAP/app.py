@@ -272,6 +272,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.ACCEPTED, snapshot)
                 return
             if path == "/api/gps/stop":
+                self._discard_body()
                 snapshot = self.gps.configure(mode="off")
                 self._json(HTTPStatus.OK, snapshot)
                 return
@@ -313,6 +314,17 @@ class AppHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise MapValidationError("JSON 루트는 객체여야 합니다")
         return payload
+
+    def _discard_body(self) -> None:
+        raw = self.headers.get("Content-Length", "0")
+        try:
+            length = int(raw)
+        except ValueError as exc:
+            raise MapValidationError("Content-Length가 올바르지 않습니다") from exc
+        if not 0 <= length <= MAX_JSON_BYTES:
+            raise MapValidationError("요청 본문 크기가 허용 범위를 벗어났습니다")
+        if length:
+            self.rfile.read(length)
 
     def _import_map(self) -> None:
         length = self._read_length(MAX_UPLOAD_BYTES)

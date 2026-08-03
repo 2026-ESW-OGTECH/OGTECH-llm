@@ -16,14 +16,14 @@ NMEA_REPLAY = ROOT / "sample_data" / "air530_replay.nmea"
 class NmeaParserTest(unittest.TestCase):
     def test_gga_fix_keeps_reported_fields_without_inventing_accuracy(self) -> None:
         result = NmeaParser().parse(
-            "$GNGGA,120000.00,3732.7000,N,12705.1000,E,1,10,0.8,35.0,M,0.0,M,,*7C"
+            "$GNGGA,120000.00,3732.7908,N,12704.5428,E,1,10,0.8,35.0,M,0.0,M,,*76"
         )
 
         self.assertIsNotNone(result)
         assert result is not None
         self.assertTrue(result["fix"])
-        self.assertAlmostEqual(result["lat"], 37.545)
-        self.assertAlmostEqual(result["lon"], 127.085)
+        self.assertAlmostEqual(result["lat"], 37.54651333333333)
+        self.assertAlmostEqual(result["lon"], 127.07571333333333)
         self.assertEqual(result["satellites"], 10)
         self.assertEqual(result["hdop"], 0.8)
         self.assertIsNone(result["acc_m"])
@@ -43,7 +43,7 @@ class NmeaParserTest(unittest.TestCase):
     def test_bad_checksum_is_rejected(self) -> None:
         with self.assertRaises(GpsInputError):
             NmeaParser().parse(
-                "$GNGGA,120000.00,3732.7000,N,12705.1000,E,1,10,0.8,35.0,M,0.0,M,,*00"
+                "$GNGGA,120000.00,3732.7908,N,12704.5428,E,1,10,0.8,35.0,M,0.0,M,,*00"
             )
 
 
@@ -118,10 +118,10 @@ class GpsServiceTest(unittest.TestCase):
         service = GpsService(NMEA_REPLAY)
         try:
             service._handle_line(
-                "$GNGGA,120000.00,3732.7000,N,12705.1000,E,1,10,0.8,35.0,M,0.0,M,,*7C",
+                "$GNGGA,120000.00,3732.7908,N,12704.5428,E,1,10,0.8,35.0,M,0.0,M,,*76",
                 mode="air530",
             )
-            rmc_body = "GNRMC,120000.00,A,3732.7000,N,12705.1000,E,0.0,0.0,030826,,,A"
+            rmc_body = "GNRMC,120000.00,A,3732.7908,N,12704.5428,E,0.0,0.0,030826,,,A"
             checksum = 0
             for character in rmc_body:
                 checksum ^= ord(character)
