@@ -255,7 +255,7 @@ class GpsService:
             self._state = {
                 "mode": mode,
                 "source": mode if mode != "off" else "none",
-                "connected": mode == "off",
+                "connected": False,
                 "error": None,
                 "received_lines": 0,
                 "rejected_lines": 0,

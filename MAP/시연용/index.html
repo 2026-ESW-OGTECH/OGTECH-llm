@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=1024, initial-scale=1, maximum-scale=1">
+    <meta name="theme-color" content="#070a0a">
+    <title>SafeAid 시연용 지도 화면 — 1024×600</title>
+    <meta name="description" content="7인치 1024x600 키오스크용 시연 화면. 오프라인 지도, 글랜서블 4개, 코드 계산 방위·거리">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="stage">
+      <div class="screen" id="screen">
+
+        <!-- 상단 계기 스트립: 읽기 전용. 터치 규격 예외.
+             긴급 경로가 이 안에 들어가면 안 됩니다. -->
+        <header class="strip" aria-label="장치 상태">
+          <div class="glance" id="glanceGps">
+            <span class="stencil">POSITION</span>
+            <strong id="gpsValue">±4.2 m</strong>
+            <span class="sub" id="gpsSub">SAT 9 · AGE 1s</span>
+          </div>
+          <div class="glance" id="glanceSun">
+            <span class="stencil">DAYLIGHT LEFT</span>
+            <strong id="sunValue">2:14</strong>
+            <span class="sub" id="sunSub">일몰 19:41</span>
+          </div>
+          <div class="glance" id="glanceBattery">
+            <span class="stencil">BATTERY</span>
+            <strong id="batteryValue">11일</strong>
+            <span class="sub" id="batterySub">78% · 감시 모드</span>
+          </div>
+          <div class="glance" id="glanceTrail">
+            <span class="stencil">TRAIL</span>
+            <strong id="trailValue">경로 위</strong>
+            <span class="sub" id="trailSub">이탈 0 m</span>
+          </div>
+          <div class="demo-badge" title="모의 값이 섞여 있으면 숨기지 않습니다">DEMO</div>
+        </header>
+
+        <!-- 지도 -->
+        <main class="map" aria-label="오프라인 지도">
+          <canvas id="mapCanvas" role="img"
+                  aria-label="보행로, 현재 위치와 정확도 반경, 목적지, 코드가 계산한 경로"></canvas>
+
+          <!-- 경고 배너: 적색은 여기와 CO 경보에만 씁니다 -->
+          <div class="alert" id="alert" role="alert" hidden>
+            <span class="alert-dot" aria-hidden="true"></span>
+            <strong id="alertText">해가 지기까지 38분. 지금 돌아서세요.</strong>
+          </div>
+
+          <div class="map-topline">
+            <span id="mapName">건국대 언덕 · 보행로</span>
+            <span class="tag-offline">OFFLINE · WGS84</span>
+          </div>
+
+          <!-- 방위·거리 판독. 지도 엔진(코드) 계산값이며 LLM이 만들지 않습니다 -->
+          <div class="readout-card" id="readout">
+            <div class="readout-head">
+              <span class="stencil" id="readoutLabel">DESTINATION</span>
+              <span class="verified">코드 계산</span>
+            </div>
+            <div class="readout-body">
+              <span class="bearing" id="readoutBearing">068°</span>
+              <span class="distance" id="readoutDistance">214 m</span>
+            </div>
+            <p class="readout-sub" id="readoutSub">도보 약 4분 · 오르막</p>
+          </div>
+
+          <div class="map-meta">
+            <div class="scalebar"><span id="scaleLabel">100 m</span><i id="scaleBar"></i></div>
+            <div class="legend">
+              <span><i class="dot-current"></i>현재</span>
+              <span><i class="dot-goal"></i>목적지</span>
+              <span><i class="dot-camp"></i>베이스캠프</span>
+            </div>
+          </div>
+        </main>
+
+        <!-- 하단 동작 바: 96px = 14.4mm. 장갑 조작 기준 충족 -->
+        <nav class="actions" aria-label="주요 동작">
+          <button class="action" id="btnDestination" type="button">
+            <span class="glyph" aria-hidden="true">◇</span>
+            <span class="label">목적지</span>
+          </button>
+          <button class="action" id="btnCheckpoint" type="button">
+            <span class="glyph" aria-hidden="true">✚</span>
+            <span class="label">체크포인트</span>
+          </button>
+          <button class="action" id="btnBasecamp" type="button">
+            <span class="glyph" aria-hidden="true">▲</span>
+            <span class="label">베이스캠프</span>
+          </button>
+          <button class="action" id="btnNight" type="button">
+            <span class="glyph" aria-hidden="true">◐</span>
+            <span class="label">야간 모드</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- 촬영 보조. 화면 밖이며 장치 UI가 아닙니다 -->
+      <div class="director" id="director">
+        <span class="stencil">촬영 장면 전환 — 숫자키</span>
+        <ol>
+          <li><b>1</b> 기본 · 현재 위치와 정확도</li>
+          <li><b>2</b> 목적지 지정 · 경로 표시 <em>컷 3</em></li>
+          <li><b>3</b> 일조 시간 경고 <em>컷 4</em></li>
+          <li><b>4</b> 베이스캠프 역추적 <em>컷 5</em></li>
+          <li><b>5</b> 트레일 이탈 경고</li>
+          <li><b>6</b> GPS 미수신 · 마지막 좌표</li>
+          <li><b>W</b> 보행 재생 시작·정지 <em>합성 궤적</em></li>
+          <li><b>N</b> 야간 모드 · <b>H</b> 이 안내 숨기기</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- konkuk_walk.graphml 을 미리 변환해 구운 실제 보행망. build_map_data.py 가 만듭니다 -->
+    <script src="konkuk_map.js" defer></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>

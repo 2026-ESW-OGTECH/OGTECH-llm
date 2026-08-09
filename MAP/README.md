@@ -1,6 +1,6 @@
 # SafeAid 오프라인 지도 변환 검증기
 
-팀의 GraphML 경로 데이터를 Jetson에서 읽고, 지도 엔진이 계산한 현재 위치·목적지·경로를 화면과 `DEVICE_STATE`로 확인하는 로컬 전용 웹앱이다. 인터넷, CDN, 외부 폰트, 프런트엔드 프레임워크를 사용하지 않는다.
+팀의 GraphML 경로 데이터와 Air530 위치 입력을 Jetson에서 읽고, 지도 엔진이 계산한 현재 위치·목적지·경로를 화면과 `DEVICE_STATE`로 확인하는 로컬 전용 앱이다. Python 서버와 Chromium이 모두 Jetson 안에서 `127.0.0.1`로만 통신하며 인터넷, CDN, 외부 폰트, 프런트엔드 프레임워크를 사용하지 않는다.
 
 > 지도와 경로를 LLM이 계산하지 않는다. 지도 엔진 코드가 계산한 작은 `DEVICE_STATE`만 LLM의 읽기 전용 입력 후보로 보여 준다. LLM의 경로·방위·거리 생성은 허용하지 않는다.
 
@@ -16,6 +16,8 @@
 flowchart LR
   A["GraphML 또는 OSM XML"] --> B["좌표·CRS·길이·연결망 검증"]
   B --> C["런타임 지도 JSON"]
+  G["Air530 NMEA 또는 STM32 GET_FIX"] --> H["체크섬·좌표·fix 검증"]
+  H --> D
   C --> D["지도 엔진 A* 계산"]
   D --> E["현재 위치·목적지·경로 표시"]
   D --> F["작은 DEVICE_STATE 읽기 전용 출력"]
@@ -23,7 +25,7 @@ flowchart LR
 
 ## 실행
 
-Jetson Xavier NX의 JetPack 5.1.x 기본 Python 3.8을 기준으로 NetworkX 3.1을 고정했다 `[출처: requirements.txt]`.
+Jetson Xavier NX의 JetPack 5.1.x 기본 Python 3.8을 기준으로 NetworkX 3.1과 pyserial 3.5를 고정했다 `[출처: requirements.txt]`.
 
 ```bash
 cd smartaid-llm/MAP
@@ -34,6 +36,12 @@ python app.py
 ```
 
 Chromium에서 `http://127.0.0.1:8790/`을 연다 `[출처: app.py 기본값]`.
+
+하드웨어가 오기 전에는 다음 명령으로 DEMO NMEA를 반복 재생할 수 있다. 화면의 `DEMO` 표시는 유지된다.
+
+```bash
+python app.py --gps-mode replay
+```
 
 Windows 개발 PC에서는 활성화 명령만 다음처럼 바꾼다.
 
@@ -51,8 +59,32 @@ python app.py
 2. `오프라인 지도 넣기`에서 새 GraphML 또는 OSM XML을 선택하면 검증·변환·화면 갱신이 연속으로 실행된다.
 3. `현재 위치 지정` 또는 `목적지 지정`을 누르고 지도 안을 터치한다. 두 지점이 있으면 경로를 자동 계산한다.
 4. 오른쪽 `LLM READ-ONLY INPUT`에서 지도 전체가 아닌 제한된 `gps`·`route` 상태만 확인한다.
+5. `GPS 연결`에서 NMEA 재생, Air530 직결, STM32 최종 입력 중 하나를 선택한다.
 
-모든 수동 좌표와 샘플 좌표는 실제 Air530 측정이 아니므로 화면의 `DEMO` 표시는 숨기지 않는다. 생산 연동에서는 STM32/Air530이 보낸 fix·정확도·위성 수·좌표 경과 시간을 `/api/route` 입력에 전달해야 한다.
+모든 수동 좌표와 샘플 좌표는 실제 Air530 측정이 아니므로 화면의 `DEMO` 표시는 숨기지 않는다. 실장 입력은 fix·좌표·위성 수·좌표 경과 시간을 `/api/route`에 전달한다. Air530 직결 GGA에 `acc_m`이 없으면 HDOP를 미터 정확도로 임의 변환하지 않고 `±—`로 표시한다. STM32가 측정 또는 계산 근거와 함께 보고한 `acc_m`만 `±m`로 표시한다.
+
+fix가 끊기거나 입력이 3초 이상 멈추면 `[출처: gps_service.py의 FIX_STALE_AFTER_S]` 새 좌표를 추정하지 않는다. 마지막 확정 좌표를 회색으로 남기고 `AGE`만 증가시킨다.
+
+Air530 도착 당일 절차와 STM32 JSON 계약은 [GPS_BRINGUP.md](GPS_BRINGUP.md)를 따른다.
+
+## 완전 오프라인 설치
+
+인터넷이 되는 개발 PC에서 Linux용 Jetson 가상환경과 같은 Python으로 wheel을 미리 받는다.
+
+```bash
+python -m pip download -r requirements.txt -d wheels
+```
+
+`MAP` 폴더와 `wheels`를 Jetson으로 복사한 뒤 네트워크를 끊고 설치한다.
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --no-index --find-links wheels -r requirements.txt
+python app.py --gps-mode replay
+```
+
+`--no-index`가 인터넷 패키지 저장소 접속을 막는다 `[출처: 실행 명령]`. 앱 실행 중에도 외부 요청은 없으며 지도·GNSS·경로 API는 모두 로컬이다.
 
 지도 화면에는 `© OpenStreetMap contributors` 귀속을 항상 표시한다. 샘플 데이터의 생성 범위와 라이선스는 `sample_data/ATTRIBUTION.md`를 따른다.
 
@@ -85,8 +117,8 @@ curl -s http://127.0.0.1:8790/api/map | python3 -c 'import json,sys; m=json.load
 python -B -m unittest discover -s tests -v
 ```
 
-회귀 테스트 7개는 고정 데모 경로 913.08m·26개 노드와 대형 지도 공간 표본을 확인한다 `[실측]`. 이 값은 실제 사용자 이동 기록이 아니라 팀원이 넣은 공개 캠퍼스 좌표 쌍이다.
+회귀 테스트 18개는 고정 데모 경로 913.08m·26개 노드, 대형 지도 공간 표본, NMEA 체크섬, fix/no-fix, STM32 JSON, 마지막 좌표 보존, 로컬 GPS API와 경로 연계를 확인한다 `[실측]`. 이 값은 실제 사용자 이동 기록이 아니라 팀원이 넣은 공개 캠퍼스 좌표 쌍이다.
 
 ## 범위
 
-이 폴더는 변환 파이프라인 검증용이다. 최종 제품의 지도 타일 서빙과 항법 API는 `smartaid-backend`, 7인치 키오스크 지도 UI는 `smartaid-frontend`로 옮겨야 한다. PMTiles/MBTiles 배경 지도, Air530 UART/NMEA, STM32 NAV1, 체크포인트 DB는 아직 연결하지 않았다.
+이 폴더는 지도·GNSS 변환 파이프라인 검증용이다. Air530 실물 직렬 연결은 장치 도착 후 검증해야 한다 `[미검증]`. 최종 제품의 지도 타일 서빙과 항법 API는 `smartaid-backend`, 7인치 키오스크 지도 UI는 `smartaid-frontend`로 옮겨야 한다. PMTiles/MBTiles 배경 지도와 체크포인트 DB는 아직 연결하지 않았다.
