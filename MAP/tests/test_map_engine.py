@@ -96,6 +96,20 @@ class OfflineMapTest(unittest.TestCase):
         self.assertEqual(len(result.coordinates), 3)
         self.assertEqual(result.coordinates[1], (127.0005, 37.0005))
 
+    def test_trail_offset_uses_edge_segment_not_only_nodes(self) -> None:
+        graph = nx.MultiDiGraph(crs="epsg:4326")
+        graph.add_node("a", x=127.0, y=37.0)
+        graph.add_node("b", x=127.01, y=37.0)
+        graph.add_edge("a", "b", length=890.0)
+        offline_map = OfflineMap(
+            graph, source_name="straight.graphml", source_type="graphml"
+        )
+
+        offset = offline_map.trail_offset_m(37.0001, 127.005)
+
+        self.assertLess(offset, 12.0)
+        self.assertGreater(offset, 10.0)
+
     def test_runtime_round_trip_keeps_route(self) -> None:
         offline_map = OfflineMap.from_graphml(SAMPLE_MAP)
         with tempfile.TemporaryDirectory() as directory:

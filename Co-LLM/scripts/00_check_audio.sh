@@ -5,8 +5,8 @@
 # usage:
 #   bash scripts/00_check_audio.sh                  # mic + speaker loopback
 #   bash scripts/00_check_audio.sh --spk-only       # speaker only (no mic needed)
-#   bash scripts/00_check_audio.sh plughw:CARD=Device,DEV=0 plughw:CARD=Device_1,DEV=0
-#   bash scripts/00_check_audio.sh --spk-only plughw:CARD=Device,DEV=0
+#   bash scripts/00_check_audio.sh plughw:CARD=Device,DEV=0 plughw:CARD=UACDemoV10,DEV=0
+#   bash scripts/00_check_audio.sh --spk-only plughw:CARD=UACDemoV10,DEV=0
 
 set -u
 
@@ -118,7 +118,7 @@ if [ "${SPK_ONLY}" -eq 1 ]; then
   hr
   if command -v espeak-ng >/dev/null 2>&1; then
     espeak-ng -v ko -s 150 -w "${OUT_DIR}/spk_check.wav" --stdin <<'TXT'
-해가 지기까지 40분 남았습니다. 지금 돌아서세요.
+해가 지기까지 40분 남았습니다. 귀환 권고 시각과 베이스캠프 경로를 확인하세요.
 TXT
     aplay -D "${SPK}" "${OUT_DIR}/spk_check.wav" || true
     echo "  robotic voice is EXPECTED. espeak-ng is the baseline, not the final engine."

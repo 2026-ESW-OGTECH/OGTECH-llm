@@ -7,7 +7,7 @@
 #
 #   bash 06_demo.sh                 # record 4 s
 #   bash 06_demo.sh 6               # record 6 s   <- seconds is the 1st argument
-#   bash 06_demo.sh 4 --say "해가 지기까지 40분 남았습니다. 지금 돌아서세요."
+#   bash 06_demo.sh 4 --say "해가 지기까지 40분 남았습니다. 귀환 권고 시각과 베이스캠프 경로를 확인하세요."
 #   bash 06_demo.sh 4 --no-prompt   # domain prompt OFF, for an A/B take
 #   bash 06_demo.sh 4 --keep        # keep demo_0001.wav.. instead of overwriting
 #   bash 06_demo.sh 4 plughw:CARD=Device,DEV=0 plughw:CARD=UACDemoV10,DEV=0

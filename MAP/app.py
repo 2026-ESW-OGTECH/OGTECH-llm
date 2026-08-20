@@ -13,10 +13,12 @@ import os
 from pathlib import Path
 from queue import Empty
 import shutil
+import sys
 import threading
 from typing import Any
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
+import wave
 
 from map_engine import (
     DEFAULT_MAX_SNAP_M,
@@ -29,15 +31,19 @@ from map_engine import (
     load_runtime,
 )
 from gps_service import GpsInputError, GpsService
+from navigation_service import NavigationInputError, NavigationService
 
 
 ROOT = Path(__file__).resolve().parent
 STATIC_ROOT = ROOT / "static"
+PRODUCT_ROOT = ROOT / "시연용"
 RUNTIME_ROOT = ROOT / "runtime"
 UPLOAD_ROOT = RUNTIME_ROOT / "uploads"
 ACTIVE_MAP = RUNTIME_ROOT / "active_map.json"
 SAMPLE_MAP = ROOT / "sample_data" / "konkuk_walk.graphml"
 GPS_REPLAY = ROOT / "sample_data" / "air530_replay.nmea"
+WAYPOINTS_PATH = RUNTIME_ROOT / "waypoints.json"
+POI_CATALOG_PATH = PRODUCT_ROOT / "poi_catalog.json"
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
 MAX_JSON_BYTES = 64 * 1024
 ALLOWED_SUFFIXES = {".graphml", ".osm", ".xml"}
@@ -51,8 +57,9 @@ SAMPLE_POINTS = {
 class MapRegistry:
     """현재 활성 지도와 런타임 파일 교체를 직렬화한다."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, force_sample: bool = False) -> None:
         self._lock = threading.RLock()
+        self._force_sample = force_sample
         self._import_status: dict[str, Any] = {
             "state": "idle",
             "stage": "지도 업로드 대기",
@@ -62,8 +69,22 @@ class MapRegistry:
         UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
         self._map = self._load_initial_map()
         self._overview_cache = self._make_overview(self._map)
+        self._poi_catalog = self._load_poi_catalog()
+
+    @staticmethod
+    def _load_poi_catalog() -> dict[str, Any]:
+        """시연 지도와 출처가 일치할 때만 쓸 로컬 POI 카탈로그를 읽는다."""
+        try:
+            payload = json.loads(POI_CATALOG_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"version": 1, "map_sources": [], "demo": False, "pois": []}
+        if payload.get("version") != 1 or not isinstance(payload.get("pois"), list):
+            return {"version": 1, "map_sources": [], "demo": False, "pois": []}
+        return payload
 
     def _load_initial_map(self) -> OfflineMap:
+        if self._force_sample:
+            return load_map_source(SAMPLE_MAP)
         if ACTIVE_MAP.exists():
             try:
                 return load_runtime(ACTIVE_MAP)
@@ -78,7 +99,7 @@ class MapRegistry:
         result = offline_map.overview()
         if offline_map.source_name == SAMPLE_MAP.name:
             result["suggested_points"] = SAMPLE_POINTS
-        result["demo"] = True
+        result["demo"] = offline_map.source_name == SAMPLE_MAP.name
         return result
 
     def overview(self) -> dict[str, Any]:
@@ -196,6 +217,97 @@ class MapRegistry:
             },
         }
 
+    def trail_offset_m(self, lat: float, lon: float) -> float:
+        with self._lock:
+            return self._map.trail_offset_m(lat, lon)
+
+    def route_between(
+        self,
+        start_lat: float,
+        start_lon: float,
+        goal_lat: float,
+        goal_lon: float,
+    ) -> Any:
+        with self._lock:
+            return self._map.find_route(
+                start_lat=start_lat,
+                start_lon=start_lon,
+                goal_lat=goal_lat,
+                goal_lon=goal_lon,
+            )
+
+    def nearest_poi(self, kind: str, lat: float, lon: float) -> dict[str, Any] | None:
+        """현재 활성 지도와 일치하는 로컬 표식 중 가장 가까운 항목을 코드로 고른다."""
+        if kind not in {"water_source"}:
+            raise MapValidationError("지원하지 않는 POI 종류입니다")
+        with self._lock:
+            active_source = self._map.source_name
+            catalog = self._poi_catalog
+            catalog_sources = catalog.get("map_sources")
+            if not isinstance(catalog_sources, list):
+                catalog_sources = [catalog.get("map_source")]
+            if active_source not in catalog_sources:
+                return None
+            candidates: list[dict[str, Any]] = []
+            for raw in catalog.get("pois", []):
+                if not isinstance(raw, dict) or raw.get("kind") != kind:
+                    continue
+                try:
+                    poi_lat = _finite_number(raw.get("lat"), "POI 위도", -90, 90)
+                    poi_lon = _finite_number(raw.get("lon"), "POI 경도", -180, 180)
+                except MapValidationError:
+                    continue
+                item = dict(raw)
+                item["lat"] = poi_lat
+                item["lon"] = poi_lon
+                item["distance_m"] = round(haversine_m(lon, lat, poi_lon, poi_lat), 1)
+                item["demo"] = bool(catalog.get("demo"))
+                candidates.append(item)
+            return min(candidates, key=lambda item: item["distance_m"], default=None)
+
+    def diagnostics(self) -> dict[str, Any]:
+        """활성 지도와 그 지도에 귀속된 POI 카탈로그를 읽기 전용으로 점검한다."""
+        with self._lock:
+            overview = dict(self._overview_cache)
+            active_source = self._map.source_name
+            catalog = dict(self._poi_catalog)
+        statistics = overview.get("statistics") or {}
+        node_count = int(statistics.get("nodes") or 0)
+        edge_count = int(statistics.get("edges") or 0)
+        raw_sources = catalog.get("map_sources")
+        catalog_sources = (
+            raw_sources
+            if isinstance(raw_sources, list)
+            else [catalog.get("map_source")]
+        )
+        poi_count = 0
+        if active_source in catalog_sources:
+            for item in catalog.get("pois") or []:
+                if not isinstance(item, dict) or item.get("kind") != "water_source":
+                    continue
+                try:
+                    lat = float(item["lat"])
+                    lon = float(item["lon"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if isfinite(lat) and isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180:
+                    poi_count += 1
+        return {
+            "map": {
+                "ok": node_count > 0 and edge_count > 0,
+                "source_name": active_source,
+                "nodes": node_count,
+                "edges": edge_count,
+                "demo": bool(overview.get("demo")),
+            },
+            "poi": {
+                "ok": active_source in catalog_sources and poi_count > 0,
+                "active_source_match": active_source in catalog_sources,
+                "water_source_count": poi_count,
+                "demo": bool(catalog.get("demo")),
+            },
+        }
+
 
 def _safe_filename(value: str) -> str:
     basename = Path(unquote(value)).name
@@ -230,6 +342,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     registry: MapRegistry
     gps: GpsService
+    navigation: NavigationService
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:  # noqa: N802 - 표준 라이브러리 규약
@@ -252,9 +365,188 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/api/gps/events":
             self._gps_events()
             return
+        if path == "/api/buttons":
+            self._json(HTTPStatus.OK, self.gps.snapshot()["hardware_buttons"])
+            return
+        if path == "/api/buttons/events":
+            self._button_events()
+            return
+        if path == "/api/device":
+            self._json(HTTPStatus.OK, self.navigation.snapshot())
+            return
+        if path == "/api/diagnostics":
+            self._json(HTTPStatus.OK, self._diagnostics())
+            return
+        if path == "/api/device/events":
+            self._device_events()
+            return
+        if path == "/api/waypoints":
+            self._json(HTTPStatus.OK, self.navigation.waypoints.snapshot())
+            return
+        if path == "/api/voice":
+            self._json(HTTPStatus.OK, self.navigation.voice_snapshot())
+            return
+        if path == "/api/voice/events":
+            self._voice_events()
+            return
         if path == "/":
             path = "/index.html"
         self._static(path)
+
+    @staticmethod
+    def _wav_ready(path: Path) -> bool:
+        try:
+            with wave.open(str(path), "rb") as stream:
+                return (
+                    stream.getcomptype() == "NONE"
+                    and stream.getsampwidth() == 2
+                    and stream.getnchannels() in {1, 2}
+                    and stream.getnframes() > 0
+                )
+        except (OSError, EOFError, wave.Error):
+            return False
+
+    def _diagnostics(self) -> dict[str, Any]:
+        map_checks = self.registry.diagnostics()
+        gps = self.gps.snapshot()
+        now = datetime.now(self.navigation.local_tz)
+        system_clock_ok = 2025 <= now.year <= 2100 and now.utcoffset() is not None
+        rtc = gps.get("rtc") or {}
+        rtc_ready = bool(rtc.get("valid") and not rtc.get("stale") and rtc.get("iso_utc"))
+        required_audio = {
+            "목적지 확인": PRODUCT_ROOT / "destination_confirmed.wav",
+            "목적지 도착": PRODUCT_ROOT / "destination_arrived.wav",
+            "베이스캠프 도착": PRODUCT_ROOT / "return_to_base.wav",
+            "TTS 실패 안내": PRODUCT_ROOT / "tts_unavailable.wav",
+        }
+        audio_states = {
+            label: self._wav_ready(path) for label, path in required_audio.items()
+        }
+        environment = gps.get("environment") or {}
+        co = gps.get("co") or {}
+        sensor_ready = bool(
+            environment.get("valid")
+            and environment.get("pressure_valid")
+            and not environment.get("stale")
+            and co.get("valid")
+            and not co.get("stale")
+        )
+        gps_state = (
+            "demo"
+            if gps.get("fix") is True and gps.get("demo")
+            else "pass"
+            if gps.get("fix") is True
+            else "waiting"
+        )
+        sensor_state = (
+            "demo"
+            if sensor_ready and gps.get("demo")
+            else "pass"
+            if sensor_ready
+            else "waiting"
+        )
+        checks = [
+            {
+                "id": "map",
+                "label": "오프라인 지도",
+                "state": (
+                    "demo"
+                    if map_checks["map"]["ok"] and map_checks["map"]["demo"]
+                    else "pass"
+                    if map_checks["map"]["ok"]
+                    else "fail"
+                ),
+                "detail": (
+                    f"노드 {map_checks['map']['nodes']:,} · "
+                    f"엣지 {map_checks['map']['edges']:,}"
+                ),
+            },
+            {
+                "id": "poi",
+                "label": "검수 POI",
+                "state": (
+                    "demo"
+                    if map_checks["poi"]["ok"] and map_checks["poi"]["demo"]
+                    else "pass"
+                    if map_checks["poi"]["ok"]
+                    else "fail"
+                ),
+                "detail": f"수원 표식 {map_checks['poi']['water_source_count']}개",
+            },
+            {
+                "id": "clock",
+                "label": "DS3231 RTC",
+                "state": "pass" if rtc_ready else "waiting" if system_clock_ok else "fail",
+                "detail": (
+                    f"STM32 확인 · {rtc.get('iso_utc')}"
+                    if rtc_ready
+                    else "RTC 미연동 · 시스템만"
+                    if system_clock_ok
+                    else "RTC 미연동 · 시스템 시각도 유효하지 않음"
+                ),
+            },
+            {
+                "id": "gps",
+                "label": "GPS",
+                "state": gps_state,
+                "detail": (
+                    f"수신 · 위성 {gps.get('satellites') or '—'}개"
+                    if gps.get("fix") is True
+                    else "fix 대기 · 위치 추정 안 함"
+                ),
+            },
+            {
+                "id": "sensors",
+                "label": "환경 센서",
+                "state": sensor_state,
+                "detail": (
+                    "SHT40·BMP390·CO 계측 수신"
+                    if sensor_ready
+                    else " · ".join(
+                        (
+                            f"SHT40 {'확인' if environment.get('valid') else '대기'}",
+                            f"BMP390 {'확인' if environment.get('pressure_valid') else '대기'}",
+                            f"CO {'확인' if co.get('valid') else '대기'}",
+                        )
+                    )
+                ),
+            },
+            {
+                "id": "audio",
+                "label": "고정 음성 파일",
+                "state": "pass" if all(audio_states.values()) else "fail",
+                "detail": (
+                    f"PCM {sum(audio_states.values())}/{len(audio_states)} · 출력 미검사"
+                ),
+            },
+        ]
+        critical_ids = {"map", "poi", "clock", "audio"}
+        critical_fail = any(
+            item["state"] == "fail" for item in checks if item["id"] in critical_ids
+        )
+        if critical_fail:
+            overall = "degraded"
+        elif any(item["state"] == "demo" for item in checks):
+            overall = "demo"
+        elif any(item["state"] == "waiting" for item in checks):
+            overall = "waiting"
+        else:
+            overall = "ready"
+        return {
+            "version": 1,
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "offline": True,
+            "overall": overall,
+            "checks": checks,
+            "audio_files": audio_states,
+            "contract": {
+                "gps_wait_is_not_a_position_fix": True,
+                "sensor_wait_is_not_reported_as_live": True,
+                "network_required": False,
+                "rtc_is_not_claimed_without_stm32_evidence": True,
+                "fixed_audio_check_is_file_only": True,
+            },
+        }
 
     def do_POST(self) -> None:  # noqa: N802 - 표준 라이브러리 규약
         path = urlsplit(self.path).path
@@ -283,8 +575,58 @@ class AppHandler(BaseHTTPRequestHandler):
                 payload = self._read_json()
                 self._json(HTTPStatus.OK, self.registry.route(payload))
                 return
+            if path == "/api/waypoints":
+                payload = self._read_json()
+                self._json(HTTPStatus.OK, self.navigation.apply_waypoint(payload))
+                return
+            if path == "/api/voice/commands":
+                payload = self._read_json()
+                self._json(HTTPStatus.OK, self.navigation.apply_voice_command(payload))
+                return
+            if path == "/api/power/shutdown-ack":
+                payload = self._read_json()
+                if payload:
+                    raise GpsInputError("전원 종료 ACK에는 인자를 사용할 수 없습니다")
+                if not self.gps.request_stm32_power_shutdown_ack():
+                    raise GpsInputError(
+                        "검증된 STM32 종료 대기 상태가 없어 종료 ACK를 보낼 수 없습니다"
+                    )
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "queued": True,
+                        "command": "power_shutdown_ack",
+                        "coordinates_accepted": False,
+                        "gate_cut_requires_stm32_pending_request": True,
+                    },
+                )
+                return
+            if path == "/api/power/shutdown-cancel":
+                payload = self._read_json()
+                if payload:
+                    raise GpsInputError("전원 종료 취소에는 인자를 사용할 수 없습니다")
+                if not self.gps.request_stm32_power_shutdown_cancel():
+                    raise GpsInputError(
+                        "취소할 STM32 전원 종료 transaction이 없습니다"
+                    )
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "queued": True,
+                        "command": "power_shutdown_cancel",
+                        "coordinates_accepted": False,
+                        "cancels_only_current_power_transaction": True,
+                    },
+                )
+                return
             self._json(HTTPStatus.NOT_FOUND, {"error": "API 경로가 없습니다"})
-        except (GpsInputError, MapValidationError, RouteNotFound, SnapOutOfBounds) as exc:
+        except (
+            GpsInputError,
+            NavigationInputError,
+            MapValidationError,
+            RouteNotFound,
+            SnapOutOfBounds,
+        ) as exc:
             self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
         except Exception as exc:
             print(f"요청 처리 실패: {exc}")
@@ -354,6 +696,23 @@ class AppHandler(BaseHTTPRequestHandler):
             "/index.html": STATIC_ROOT / "index.html",
             "/app.js": STATIC_ROOT / "app.js",
             "/styles.css": STATIC_ROOT / "styles.css",
+            "/product": PRODUCT_ROOT / "index.html",
+            "/product/": PRODUCT_ROOT / "index.html",
+            "/product/index.html": PRODUCT_ROOT / "index.html",
+            "/product/styles.css": PRODUCT_ROOT / "styles.css",
+            "/product/live_app.js": PRODUCT_ROOT / "live_app.js",
+            "/product/app.js": PRODUCT_ROOT / "app.js",
+            "/product/konkuk_map.js": PRODUCT_ROOT / "konkuk_map.js",
+            "/video": PRODUCT_ROOT / "video.html",
+            "/video/": PRODUCT_ROOT / "video.html",
+            "/video/index.html": PRODUCT_ROOT / "video.html",
+            "/video/styles.css": PRODUCT_ROOT / "styles.css",
+            "/video/video_styles.css": PRODUCT_ROOT / "video_styles.css",
+            "/video/video_app.js": PRODUCT_ROOT / "video_app.js",
+            "/video/video_map.js": PRODUCT_ROOT / "video_map.js",
+            "/video/destination_set.wav": PRODUCT_ROOT / "destination_set.wav",
+            "/video/destination_arrived.wav": PRODUCT_ROOT / "destination_arrived.wav",
+            "/video/return_to_base.wav": PRODUCT_ROOT / "return_to_base.wav",
         }
         target = mapping.get(request_path)
         if not target or not target.is_file():
@@ -393,6 +752,81 @@ class AppHandler(BaseHTTPRequestHandler):
         finally:
             self.gps.unsubscribe(subscriber)
 
+    def _device_events(self) -> None:
+        subscriber = self.gps.subscribe()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        try:
+            while True:
+                try:
+                    subscriber.get(timeout=10.0)
+                except Empty:
+                    self.wfile.write(b": keep-alive\n\n")
+                else:
+                    encoded = json.dumps(
+                        self.navigation.snapshot(),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                    self.wfile.write(b"data: " + encoded + b"\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        finally:
+            self.gps.unsubscribe(subscriber)
+
+    def _button_events(self) -> None:
+        """좌표 없이 검증된 새 물리 버튼 edge만 전달한다."""
+        subscriber = self.gps.subscribe_buttons()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        try:
+            while True:
+                try:
+                    payload = subscriber.get(timeout=10.0)
+                except Empty:
+                    self.wfile.write(b": keep-alive\n\n")
+                else:
+                    encoded = json.dumps(
+                        payload, ensure_ascii=False, separators=(",", ":")
+                    ).encode("utf-8")
+                    self.wfile.write(b"data: " + encoded + b"\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        finally:
+            self.gps.unsubscribe_buttons(subscriber)
+
+    def _voice_events(self) -> None:
+        subscriber = self.navigation.subscribe_voice()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        try:
+            while True:
+                try:
+                    payload = subscriber.get(timeout=10.0)
+                except Empty:
+                    self.wfile.write(b": keep-alive\n\n")
+                else:
+                    encoded = json.dumps(
+                        payload, ensure_ascii=False, separators=(",", ":")
+                    ).encode("utf-8")
+                    self.wfile.write(b"data: " + encoded + b"\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        finally:
+            self.navigation.unsubscribe_voice(subscriber)
+
     def _json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
@@ -412,21 +846,39 @@ class AppHandler(BaseHTTPRequestHandler):
 class GpsAppServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], handler: type[AppHandler], gps: GpsService) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        handler: type[AppHandler],
+        gps: GpsService,
+        navigation: NavigationService,
+    ) -> None:
         self.gps = gps
+        self.navigation = navigation
         super().__init__(address, handler)
 
     def server_close(self) -> None:
+        self.navigation.close()
         self.gps.close()
         super().server_close()
+
+    def handle_error(self, request: Any, client_address: tuple[str, int]) -> None:
+        """SSE 탭 종료에서 생기는 정상 연결 해제는 traceback으로 남기지 않는다."""
+        error = sys.exc_info()[1]
+        if isinstance(error, (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
 
 
 def build_server(
     host: str,
     port: int,
     gps_configuration: dict[str, Any] | None = None,
+    waypoint_path: str | Path | None = None,
+    *,
+    force_sample_map: bool = False,
 ) -> ThreadingHTTPServer:
-    registry = MapRegistry()
+    registry = MapRegistry(force_sample=force_sample_map)
     gps = GpsService(GPS_REPLAY)
     configuration = gps_configuration or {"mode": "off"}
     gps.configure(
@@ -434,12 +886,17 @@ def build_server(
         port=str(configuration.get("port", "")),
         baud=configuration.get("baud"),
     )
+    navigation = NavigationService(
+        registry,
+        gps,
+        waypoint_path or WAYPOINTS_PATH,
+    )
     handler = type(
         "ConfiguredAppHandler",
         (AppHandler,),
-        {"registry": registry, "gps": gps},
+        {"registry": registry, "gps": gps, "navigation": navigation},
     )
-    return GpsAppServer((host, port), handler, gps)
+    return GpsAppServer((host, port), handler, gps, navigation)
 
 
 def main() -> None:
@@ -467,7 +924,9 @@ def main() -> None:
             "baud": args.gps_baud or None,
         },
     )
-    print(f"지도 검증 앱: http://{args.host}:{args.port}")
+    print(f"지도 검증 도구: http://{args.host}:{args.port}/")
+    print(f"SafeAid 제품 화면: http://{args.host}:{args.port}/product/")
+    print(f"촬영 전용 DEMO: http://{args.host}:{args.port}/video/")
     print("종료: Ctrl+C")
     try:
         server.serve_forever()

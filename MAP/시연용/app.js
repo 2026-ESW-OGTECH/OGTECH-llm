@@ -69,7 +69,7 @@ const SCENES = {
     current: "onTrail", fix: true, accuracy: 5.1, satellites: 8, ageSeconds: 2,
     target: "destination", route: "routeToGoal",
     daylight: 38, sunset: "19:41", batteryDays: 11, batteryPct: 76,
-    trailOffset: 0, alert: "해가 지기까지 38분. 지금 돌아서세요.",
+    trailOffset: 0, alert: "귀환 권고 시각 도달 · 베이스캠프 경로를 확인하세요.",
   },
   4: {
     title: "베이스캠프 역추적 · 컷 5",

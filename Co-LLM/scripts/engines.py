@@ -340,12 +340,8 @@ def make_tts(name=None):
 # LLM (경로 A)
 # =============================================================
 
-def ask_llm(user_text):
-    """llama-server 의 OpenAI 호환 엔드포인트를 직접 부릅니다.
-
-    실패해도 예외를 올리지 않고 (None, 사유) 를 돌려줍니다.
-    AGENTS.md: 재시도하지 않습니다. 실패하면 고정 문구로 갑니다.
-    """
+def classify_scenario(user_text):
+    """14개 라벨 JSON Schema 분류. 실패 시 재시도 없이 unknown을 돌려준다."""
     import json
     import urllib.error
     import urllib.request
@@ -353,36 +349,32 @@ def ask_llm(user_text):
     payload = {
         "model": C.LLM_MODEL,
         "messages": [
-            {"role": "system", "content": C.LLM_SYSTEM},
-            {"role": "user", "content": user_text},
+            {"role": "system", "content": C.CLASSIFIER_SYSTEM},
+            {"role": "user", "content": str(user_text or "")[:240]},
         ],
-        "temperature": C.LLM_TEMPERATURE,
-        "max_tokens": C.LLM_MAX_TOKENS,
+        "temperature": 0.0,
+        "max_tokens": 16,
         "stream": False,
+        "response_format": C.CLASSIFIER_RESPONSE_FORMAT,
     }
-    req = urllib.request.Request(
+    request = urllib.request.Request(
         C.LLM_URL,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=C.LLM_TIMEOUT_S) as r:
-            body = json.loads(r.read().decode("utf-8"))
-    except urllib.error.URLError as e:
-        return None, "llama-server 연결 실패 (%s). 5단계를 확인하세요." % e
-    except Exception as e:  # noqa: BLE001
-        return None, "LLM 호출 실패: %s" % e
-
-    try:
-        text = body["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError):
-        return None, "응답 형식이 예상과 다릅니다: %s" % str(body)[:200]
-
-    usage = body.get("usage") or {}
-    return text, "프롬프트 %s tok / 생성 %s tok" % (
-        usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?")
-    )
-
+        with urllib.request.urlopen(request, timeout=C.LLM_CLASSIFY_TIMEOUT_S) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        content = body["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        if set(parsed) != {"scenario_id"} or parsed["scenario_id"] not in C.SCENARIO_IDS:
+            return "unknown", "schema_validation_failed"
+        usage = body.get("usage") or {}
+        return parsed["scenario_id"], "프롬프트 %s tok / 생성 %s tok" % (
+            usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?")
+        )
+    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, json.JSONDecodeError):
+        return "unknown", "classifier_failed_no_retry"
 
 # =============================================================
 # 내부

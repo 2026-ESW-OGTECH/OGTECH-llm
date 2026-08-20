@@ -244,7 +244,7 @@ W1 스파이크 (2일)
        RTF < 0.5  AND  피크 메모리 < 1.0 GB   → 채택
        실패                                    → Kokoro-82M 재시도
        둘 다 실패                              → espeak-ng 폴백 확정 + 보고서에 명시
-  4. 결과를 smartaid-llm/results/ 에 기록
+  4. 결과를 OGTECH-llm/results/ 에 기록
 ```
 
 ---
@@ -268,7 +268,7 @@ W1 스파이크 (2일)
 현재 세 폴더 모두 **비어 있거나 README만 있습니다.** 도메인 전환과 함께 채웁니다.
 
 ```
-smartaid-llm/
+OGTECH-llm/
   config/
     system_prompt_ko.txt        # 완전 고정. KV 캐시 대상
     schema_classify.json        # enum 14개

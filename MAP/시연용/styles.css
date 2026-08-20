@@ -112,7 +112,7 @@ button { font: inherit; color: inherit; }
 
 .strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr) 96px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 210px;
   align-items: stretch;
   background: #0d1212;
   border-bottom: 1px solid var(--line-bright);
@@ -147,22 +147,37 @@ button { font: inherit; color: inherit; }
 
 /* 상태별 색은 JS가 data-state로 지정합니다 */
 .glance[data-state="live"] strong  { color: var(--green); }
+.glance[data-state="caution"] strong { color: var(--amber); }
 .glance[data-state="warn"] strong  { color: var(--red); }
 .glance[data-state="none"] strong  { color: var(--grey); }
 .glance[data-state="none"] .sub    { color: var(--grey); }
 
-.demo-badge {
+.glance-env { padding: 0 10px; border-right: 0; }
+.glance-env strong { font-size: 20px; }
+.glance-env .sub { font-size: 13px; white-space: nowrap; }
+
+.glance-location .location-meta {
   display: grid;
-  place-items: center;
-  font-family: Consolas, monospace;
-  font-size: 17px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  color: var(--amber);
-  border-left: 1px solid var(--line);
-  box-shadow: inset 0 0 0 2px var(--amber);
-  margin: 14px 12px;
+  gap: 2px;
+  line-height: 1.05;
 }
+
+.glance-coordinate strong,
+.glance-coordinate .sub {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--amber);
+}
+
+.glance-co {
+  padding: 0 10px;
+  border-right: 0;
+}
+
+.glance-co strong { font-size: 26px; }
+.glance-co .sub { font-size: 14px; white-space: nowrap; }
 
 /* ---------------------------------------------------------------
    지도
@@ -187,24 +202,86 @@ button { font: inherit; color: inherit; }
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 20px;              /* 본문 하한 */
+  max-width: calc(100% - 28px);
+  padding: 4px 6px;
+  background: rgba(7, 10, 10, 0.90);
+  border: 1px solid var(--line);
+  font-size: 20px;
   font-weight: 700;
   color: var(--text);
   text-shadow: 0 1px 0 #000;
 }
 
-.tag-offline {
-  font-family: Consolas, monospace;
+#mapName {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map.has-alert .map-topline { top: 76px; }
+
+.tag-offline,
+.tag-voice {
+  flex: 0 0 auto;
+  font-family: Consolas, "Courier New", monospace;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: var(--green);
-  border: 1px solid var(--green);
   padding: 3px 8px;
 }
 
-/* 경고가 있을 때만 지도 제목을 배너 아래로 내립니다 */
-.map.has-alert .map-topline { top: 76px; }
+.tag-offline {
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+
+.tag-voice {
+  color: var(--cyan);
+  border: 1px solid var(--cyan);
+}
+
+.tag-voice[data-status="rejected"] {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.tag-voice[hidden] { display: none; }
+
+.tag-demo {
+  font-family: Consolas, monospace;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  padding: 3px 8px;
+}
+
+.tag-demo[hidden] { display: none; }
+
+.sun-details {
+  position: absolute;
+  top: 48px;
+  left: 14px;
+  padding: 4px 8px;
+  background: rgba(7, 10, 10, 0.82);
+  border: 1px solid var(--line);
+  color: var(--cyan);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  display: grid;
+  gap: 4px;
+  max-width: calc(100% - 92px);
+}
+
+.position-details[data-state="live"] { color: var(--green); }
+.position-details[data-state="normal"] { color: var(--cyan); }
+.position-details[data-state="none"] { color: var(--muted); }
+
+.map.has-alert .sun-details { top: 112px; }
 
 /* 경고 배너 — 적색. 지도 상단을 가로지릅니다.
    display:flex 가 UA의 [hidden]{display:none} 을 이기므로 명시적으로 되돌립니다. */
@@ -252,7 +329,7 @@ button { font: inherit; color: inherit; }
   position: absolute;
   right: 14px;
   bottom: 14px;
-  width: 268px;
+  width: 390px;
   padding: 10px 14px 12px;
   background: var(--panel-raised);
   border: 1px solid var(--line-bright);
@@ -291,11 +368,14 @@ button { font: inherit; color: inherit; }
 .bearing  { font-size: 40px; }
 .distance { font-size: 34px; }
 
+.readout-timing,
 .readout-sub {
   margin: 8px 0 0;
   font-size: 20px;
   color: var(--muted);
-  line-height: 1.1;
+  line-height: 1.25;
+  display: grid;
+  gap: 2px;
 }
 
 /* 축척과 범례는 왼쪽 아래. 오른쪽 아래는 판독 카드가 씁니다 */
@@ -349,6 +429,130 @@ button { font: inherit; color: inherit; }
 .dot-current { background: var(--green); border-radius: 50%; }
 .dot-goal    { background: var(--cyan); }
 .dot-camp    { background: var(--amber); }
+
+.status-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  min-width: 320px;
+  max-width: 620px;
+  padding: 12px 18px;
+  transform: translateX(-50%);
+  background: var(--panel-raised);
+  border: 1px solid var(--amber);
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.status-toast[hidden] { display: none; }
+
+.map.selecting { cursor: crosshair; }
+
+/* 부팅 시 한 번 반드시 읽는 작동 한계. 키보드 Escape나 배경 클릭으로 닫히지 않습니다. */
+.boot-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.92);
+}
+
+.boot-notice[hidden] { display: none; }
+
+.boot-notice-card {
+  width: min(820px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 19px 30px;
+  background: var(--panel-raised);
+  border: 2px solid var(--amber);
+  box-shadow: inset 0 0 0 1px #050707;
+}
+
+.boot-notice h1 {
+  margin: 8px 0 10px;
+  color: var(--amber);
+  font-size: 38px;
+  line-height: 1.15;
+}
+
+.boot-notice p {
+  margin: 0 0 10px;
+  font-size: 24px;
+  line-height: 1.45;
+}
+
+.boot-notice .boot-note {
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.boot-diagnostics {
+  margin-top: 4px;
+}
+
+.boot-diagnostics ul {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boot-diagnostics li {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  background: #0b1010;
+  font-size: 20px;
+}
+
+.boot-diagnostics li strong { color: var(--grey); }
+.boot-diagnostics li small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boot-diagnostics li[data-state="pass"] strong { color: var(--green); }
+.boot-diagnostics li[data-state="demo"] strong { color: var(--amber); }
+.boot-diagnostics li[data-state="fail"] strong { color: var(--red); }
+
+#bootAcknowledge {
+  width: 100%;
+  min-height: 96px;
+  margin-top: 10px;
+  padding: 12px 20px;
+  border: 1px solid var(--amber);
+  background: var(--amber);
+  color: var(--bg);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+#bootAcknowledge:disabled {
+  border-color: var(--grey);
+  background: #111717;
+  color: var(--grey);
+}
+
+#bootAcknowledge:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 4px;
+}
 
 /* ---------------------------------------------------------------
    하단 동작 바 — 96px = 14.4mm. 주요 동작 기준

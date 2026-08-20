@@ -55,7 +55,7 @@ if [ "${MODE}" = "tts" ]; then
   fi
   WAV="${RES}/tts.wav"
   espeak-ng -v ko -s 150 -w "${WAV}" --stdin <<'TXT'
-해가 지기까지 40분 남았습니다. 지금 돌아서세요.
+해가 지기까지 40분 남았습니다. 귀환 권고 시각과 베이스캠프 경로를 확인하세요.
 TXT
   echo "(robotic voice is EXPECTED -- espeak-ng is the baseline, not the final engine)"
 fi

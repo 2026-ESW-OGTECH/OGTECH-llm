@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""마이크 -> STT -> (LLM) -> TTS -> 스피커 배관 테스트.
+"""마이크 -> STT -> 안전 분류 -> 검수 카드 -> TTS 배관 테스트.
 
     python scripts/voice_loop.py --path b            # 경로 B: LLM 건너뜀 (목표 <= 2.0s)
-    python scripts/voice_loop.py --path a            # 경로 A: LLM 포함  (목표 <= 3.5s)
+    python scripts/voice_loop.py --path a            # 경로 A: LLM 라벨 분류 포함 (목표 <= 3.5s)
     python scripts/voice_loop.py --path b --repeat 10
     python scripts/voice_loop.py --path a --text "물 마셔도 되는지 알고 싶어"   # 마이크 없이
     python scripts/voice_loop.py --path b --stt sherpa_onnx --tts piper
 
 측정 결과는 scripts/test_rec/latency.csv 에 append 됩니다.
 
-주의: 이 스크립트는 벤치입니다. 제품 응답 경로(키워드 게이트 -> 검수된 고정 카드)가
-아닙니다. 여기서 재는 것은 오디오 배관과 단계별 지연뿐입니다.
+주의: 이 스크립트는 벤치입니다. 지도 API를 조작하지 않으며 오디오 배관과 단계별 지연만
+잽니다. 다만 벤치에서도 LLM 자유 생성문을 재생하지 않습니다. LLM은 라벨 하나만 고르고,
+실제 발화는 제품과 같은 검수 카드에서만 가져옵니다.
 """
 
 from __future__ import annotations
@@ -26,15 +27,42 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config as C          # noqa: E402
 import engines as E         # noqa: E402
+from safeaid_core import CardRenderer, RuleRouter  # noqa: E402
 
 
 BAR = "-" * 56
+ROUTER = RuleRouter()
+CARDS = CardRenderer()
+
+
+def safe_bench_response(text, *, use_classifier, classifier_fn=E.classify_scenario):
+    """자유 생성 없이 라벨 판정과 검수 카드 발화문을 확정한다."""
+    classify_s = 0.0
+    classify_note = "키워드 규칙에서 확정"
+
+    def measured_classifier(utterance):
+        nonlocal classify_s, classify_note
+        started = time.time()
+        result = classifier_fn(utterance)
+        classify_s = time.time() - started
+        if isinstance(result, tuple):
+            label, classify_note = result
+            return label
+        classify_note = "분류기 라벨 반환"
+        return result
+
+    decision = ROUTER.resolve(
+        text or "지금 상황을 어떻게 해야 하나요",
+        classifier=measured_classifier if use_classifier else None,
+    )
+    card = CARDS.render(decision.scenario_id)
+    return card.text, decision, classify_s, classify_note
 
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Co-LLM 음성 배관 테스트")
     ap.add_argument("--path", choices=["a", "b"], default="b",
-                    help="b = LLM 건너뜀(고정 문장), a = LLM 포함")
+                    help="b = LLM 건너뜀, a = 필요할 때 LLM 라벨 분류")
     ap.add_argument("--repeat", type=int, default=1, help="반복 횟수")
     ap.add_argument("--seconds", type=float, default=None, help="녹음 초")
     ap.add_argument("--text", default=None, help="마이크 대신 이 텍스트를 STT 결과로 사용")
@@ -89,24 +117,20 @@ def run_once(args, idx):
         print("       ! 빈 결과입니다. 녹음 wav 를 직접 들어 보세요:")
         print("         aplay -D %s %s" % (C.SPK_DEVICE, rec_wav))
 
-    # ---- 3. LLM --------------------------------------------------
-    llm_s = 0.0
-    llm_note = ""
-    if args.path == "a":
-        t = time.time()
-        reply, llm_note = E.ask_llm(heard or "지금 상황을 어떻게 해야 하나요")
-        llm_s = time.time() - t
-        if reply is None:
-            print("[LLM ] %-14s %5.2f s  실패: %s" % (C.LLM_MODEL, llm_s, llm_note))
-            print("       재시도하지 않고 고정 문구로 폴백합니다 (AGENTS.md).")
-            speak = C.PATH_B_SENTENCE
-        else:
-            print("[LLM ] %-14s %5.2f s  (%s)" % (C.LLM_MODEL, llm_s, llm_note))
-            print("       %s" % reply.replace("\n", "\n       "))
-            speak = reply
+    # ---- 3. 안전 분류 + 검수 카드 -------------------------------
+    speak, decision, llm_s, llm_note = safe_bench_response(
+        heard, use_classifier=args.path == "a"
+    )
+    if llm_s > 0:
+        print("[LLM ] %-14s %5.2f s  라벨=%s (%s)"
+              % (C.LLM_MODEL, llm_s, decision.scenario_id, llm_note))
+    elif args.path == "a":
+        print("[LLM ] (규칙에서 확정되어 분류 호출 없음)")
     else:
         print("[LLM ] (건너뜀 - 경로 B)")
-        speak = C.PATH_B_SENTENCE
+    print("[CARD] %-14s source=%s reason=%s"
+          % (decision.scenario_id, decision.source, decision.reason))
+    print("       %s" % speak.replace("\n", "\n       "))
 
     # ---- 4. TTS --------------------------------------------------
     t = time.time()

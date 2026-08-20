@@ -23,8 +23,8 @@ python -m pip install --upgrade pip
 
 ```bash
 cd ~/safeaid_ai
-git clone https://github.com/SmartAid-Kit/smartaid-llm.git
-ln -sfn ~/safeaid_ai/smartaid-llm/Co-LLM ~/safeaid_ai/colm
+git clone https://github.com/2026-ESCW-OGTECH/OGTECH-llm.git
+ln -sfn ~/safeaid_ai/OGTECH-llm/Co-LLM ~/safeaid_ai/colm
 ```
 
 Windows에서 파일을 복사해 왔다면 줄바꿈부터 정리합니다. 안 하면 `bash: \r: command not found`가 납니다.

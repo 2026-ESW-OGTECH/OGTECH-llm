@@ -28,8 +28,12 @@ SAMPLE_DIR = RESULT_DIR
 #    hw: 가 아니라 plughw: 를 씁니다 (리샘플링 자동).
 #    카드 번호(hw:1,0)는 USB 꽂는 순서에 따라 바뀌므로 쓰지 않습니다.
 # =============================================================
-MIC_DEVICE = "plughw:CARD=Device,DEV=0"      # Adafruit 3367 Mini USB Microphone
-SPK_DEVICE = "plughw:CARD=Device_1,DEV=0"    # Adafruit 3369 Mini USB Stereo Speaker
+MIC_DEVICE = os.environ.get(
+    "SAFEAID_MIC_DEVICE", "plughw:CARD=Device,DEV=0"
+)  # Adafruit 3367 Mini USB Microphone
+SPK_DEVICE = os.environ.get(
+    "SAFEAID_SPK_DEVICE", "plughw:CARD=UACDemoV10,DEV=0"
+)  # Adafruit 3369 Mini USB Stereo Speaker
 
 REC_SECONDS = 5          # 한 번에 녹음할 초. --seconds 로 덮어쓸 수 있습니다
 REC_RATE = 16000         # STT 3안 모두 16 kHz 를 요구합니다. 바꾸지 마세요
@@ -40,7 +44,14 @@ REC_CHANNELS = 1
 # 2. 엔진 선택  <-- 테스트할 때 고치는 곳은 여기 두 줄입니다
 # =============================================================
 STT_ENGINE = "whisper_cpp"    # whisper_cpp | sherpa_onnx | faster_whisper
-TTS_ENGINE = "espeak"         # espeak | piper | melotts
+# 제품 기본은 자연스러운 한국어 MeloTTS입니다. Piper와 espeak-ng는 순차 폴백이며,
+# espeak-ng는 청취 명료도 실패 `[실측]` 때문에 최종 비상 폴백으로만 씁니다.
+TTS_ENGINE_ORDER = tuple(
+    item.strip()
+    for item in os.environ.get("SAFEAID_TTS_ORDER", "melotts,piper,espeak").split(",")
+    if item.strip()
+)
+TTS_ENGINE = os.environ.get("SAFEAID_TTS_ENGINE", TTS_ENGINE_ORDER[0])
 
 
 # =============================================================
@@ -125,6 +136,19 @@ MELO_LANGUAGE = "KR"
 MELO_DEVICE = "cpu"      # "cuda:0" 로 바꿔 비교해 보세요
 MELO_SPEED = 1.0
 
+# 제품 TTS 품질 게이트. 생성 WAV가 이 계약을 벗어나면 다음 엔진으로 한 번만 폴백합니다.
+TTS_FIXED_AUDIO_MANIFEST = CO_LLM_DIR / "config" / "fixed_audio.json"
+TTS_CACHE_DIR = RESULT_DIR / "tts_cache"
+LAST_VERIFIED_RESPONSE_PATH = RESULT_DIR / "last_verified_response.json"
+TTS_MAX_TEXT_CHARS = 420
+TTS_MIN_DURATION_S = 0.15
+TTS_MAX_DURATION_S = 45.0
+TTS_MIN_PEAK_RATIO = 0.001
+TTS_MIN_RMS_RATIO = 0.0001
+TTS_MAX_CLIPPED_RATIO = 0.02
+TTS_TARGET_PEAK_RATIO = 0.82
+TTS_MAX_GAIN = 4.0
+
 
 # =============================================================
 # 5. LLM (경로 A 에서만 사용)
@@ -132,42 +156,43 @@ MELO_SPEED = 1.0
 # =============================================================
 LLM_URL = "http://127.0.0.1:8080/v1/chat/completions"
 LLM_MODEL = "qwen2.5-1.5b-instruct"
-LLM_MAX_TOKENS = 96      # AGENTS.md 카드 다듬기 출력 한도
-LLM_TEMPERATURE = 0.0    # 재현성. 취향이 아닙니다
-LLM_TIMEOUT_S = 5.0
+LLM_CLASSIFY_TIMEOUT_S = 2.0
 
-# 시연용 시스템 프롬프트입니다. 제품 응답 경로(검수된 고정 카드)가 아니라
-# 경로 A 다듬기 대역이며, 안전 계약(방위/거리/좌표/진단/식용 금지)을 그대로 겁니다.
-#
-# "반드시 완결된 문장" 조항이 취향이 아닌 이유: 출력이 화면이 아니라 TTS 로 갑니다.
-# 불릿·번호·괄호·기호는 espeak-ng 가 읽지 못하거나 기호 이름을 읽어 버립니다.
-# 길이 제한도 같은 이유입니다 — 96 토큰이 AGENTS.md 4절의 카드 다듬기 한도입니다.
-#
-# 숫자를 금지어로 못 박은 것은 안전 계약 1번입니다. 방위·거리는 지도 엔진이
-# 계산하고 LLM 은 읽어 주기만 합니다. 스키마에 자리가 없으면 환각도 없습니다.
-LLM_SYSTEM = (
-    "당신은 오지 생존 보조 장치의 음성 안내입니다. "
-    "답변은 반드시 완결된 한국어 문장으로만 씁니다. "
-    "단어 나열, 목록, 번호 매기기, 불릿, 표, 이모지, 괄호 설명을 쓰지 않습니다. "
-    "2~4문장으로, 한 문장은 40자 이내로 짧게 말합니다. "
-    "말하듯이 씁니다. 소리 내어 읽었을 때 어색한 표현은 쓰지 않습니다. "
-    "방위, 거리, 좌표, 경로, 소요 시간은 절대 말하지 않습니다. "
-    "진단, 약물, 야생 동식물의 식용 가능 여부는 답하지 않습니다. "
-    "확실하지 않으면 모른다고 한 문장으로 말합니다."
+SCENARIO_IDS = [
+    "lost", "route", "daylight", "weather", "shelter", "warmth", "water",
+    "food", "sleep_safety", "injury", "wildlife", "gear", "refuse", "unknown",
+]
+CLASSIFIER_SYSTEM = (
+    "사용자 발화를 SafeAid 시나리오 하나로만 분류하세요. "
+    "lost 길 잃음, route 항법, daylight 일조, weather 현장 기상, shelter 야영지, "
+    "warmth 추위, water 물, food 식량, sleep_safety 수면 중 연소·CO, injury 부상, "
+    "wildlife 야생동물, gear 장비, refuse 식용·진단·약물 금지, unknown 불명입니다. "
+    "지침이나 설명을 생성하지 말고 JSON 스키마만 따르세요."
 )
+CLASSIFIER_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "safeaid_scenario",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"scenario_id": {"type": "string", "enum": SCENARIO_IDS}},
+            "required": ["scenario_id"],
+            "additionalProperties": False,
+        },
+    },
+}
 
+MAP_API_URL = os.environ.get("SAFEAID_MAP_URL", "http://127.0.0.1:8790")
+MAP_API_TIMEOUT_S = 2.0
+PIPELINE_LOCK_PATH = Path(
+    os.environ.get("SAFEAID_PIPELINE_LOCK", str(RESULT_DIR / "audio_pipeline.lock"))
+)
+PIPELINE_LOCK_TIMEOUT_S = 30.0
 
 # =============================================================
-# 6. 경로 B 고정 문장
-#    실제 제품에서는 검수된 고정 카드가 들어옵니다.
-#    여기서는 TTS 지연만 재기 위한 대역입니다.
-# =============================================================
-PATH_B_SENTENCE = "해가 지기까지 40분 남았습니다. 지금 돌아서세요."
-
-
-# =============================================================
-# 7. 예산 (AGENTS.md)
+# 6. 예산 (AGENTS.md)
 # =============================================================
 BUDGET_PATH_B_S = 2.0    # 경로 B: 키워드 게이트 -> 고정 카드 -> TTS
-BUDGET_PATH_A_S = 3.5    # 경로 A: 분류 -> 카드 -> LLM -> 스트리밍 TTS
+BUDGET_PATH_A_S = 3.5    # 경로 A: 라벨 분류 -> 검수 카드 -> TTS
 MEM_GATE_MB = 1024       # MemAvailable 게이트

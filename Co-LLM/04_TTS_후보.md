@@ -42,7 +42,7 @@
 sudo apt install -y espeak-ng
 espeak-ng --voices | grep -i ko
 espeak-ng -v ko -s 150 -w /tmp/t.wav --stdin <<'EOF'
-해가 지기까지 40분 남았습니다. 지금 돌아서세요.
+귀환 권고 시각에 도달했습니다. 베이스캠프 경로를 화면에서 확인하세요.
 EOF
 aplay -D plughw:CARD=Device_1,DEV=0 /tmp/t.wav
 ```

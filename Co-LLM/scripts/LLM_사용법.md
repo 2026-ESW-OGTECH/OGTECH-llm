@@ -201,7 +201,7 @@ prompt : stt_prompt.txt                    <- 프롬프트가 붙었다는 증�
 
 ```bash
 cd /home/kit/00_TEST/LLM
-bash 06_demo.sh 5 --say "해가 지기까지 40분 남았습니다. 지금 돌아서세요."
+bash 06_demo.sh 5 --say "귀환 권고 시각에 도달했습니다. 베이스캠프 경로를 화면에서 확인하세요."
 ```
 
 녹음과 인식은 그대로 하고, **스피커로는 `--say` 문장만** 나갑니다.

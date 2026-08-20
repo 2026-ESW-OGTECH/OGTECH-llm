@@ -1,115 +1,255 @@
-# Co-LLM — 마이크 → LLM → 스피커 배관 테스트
+# Co-LLM — SafeAid 제품 음성 경로와 오디오 벤치
 
-목적은 하나입니다. **"말을 걸면 소리로 답이 온다"가 Xavier NX에서 실제로 되는지**를
-가장 적은 단계로 확인하고, 각 단계가 몇 초 걸리는지 숫자로 남깁니다.
+이 폴더에는 세 경로가 함께 있다.
 
-이 폴더는 **벤치 테스트용**입니다. 제품 응답 경로(경로 A/B, 고정 카드, 키워드 게이트)가 아닙니다.
-제품 경로는 `smartaid-backend`가 담당합니다. 여기서 확인하는 것은 **오디오 배관과 지연 예산**뿐입니다.
+1. `scripts/product_voice.py`: 실제 제품 경로. STT → 안전 라우터 → 검수 카드·지도 명령 → 고품질 TTS.
+2. `scripts/voice_loop.py`와 `00`~`06` 스크립트: 엔진별 지연·정확도·오디오 장치 벤치.
+3. `scripts/physical_voice.py`와 `09_physical_voice.sh`: STM32 물리 음성 버튼 edge만 받는 push-to-talk 실행기.
 
----
+제품 실행기는 LLM이 경로·방위·거리·생존 절차를 만들지 못하게 한다. 지도 제어는 숫자 필드가 없는
+열거형 `action`만 로컬 지도 서버로 보내며, 최종 음성은 고정 카드 또는 지도·센서 코드가 계산한 값으로만
+만든다.
 
-## 부품 확인 결과 — I2S가 아니라 USB입니다
+## 제품 동작
 
-| 역할 | 구매한 부품 | 인터페이스 | 근거 |
-|---|---|---|---|
-| 마이크 | **Adafruit 3367** Mini USB Microphone | **USB 오디오** (드라이버 불필요) | [출처] 디바이스마트 상품번호 15835432 / adafruit.com/product/3367 |
-| 스피커 | **Adafruit 3369** Mini External USB Stereo Speaker | **USB 오디오** 2×2 W | [출처] 디바이스마트 상품번호 15547280 / adafruit.com/product/3369 |
-
-둘 다 USB Audio Class 장치라서 **디바이스 트리 오버레이도, I2S 배선도 필요 없습니다.**
-꽂으면 ALSA 카드로 바로 잡힙니다. 지금 하려는 테스트에는 이게 최선입니다 — 배관을 뚫는 데
-반나절짜리 device tree 작업이 끼어들지 않습니다.
-
-> 다만 이건 최종 부품이 **아닙니다.** `AGENTS.md` 고정 하드웨어 표는 INMP441(I2S) + MAX98357A(I2S)입니다.
-> IP67 외함에 USB 커넥터 2개를 관통시키는 건 방수 부담이고, USB 오디오는 항상 5 V 버스를 물고 있습니다.
-> **소프트웨어 파이프라인을 USB로 먼저 확정하고, I2S 전환은 ALSA 장치 이름만 바꾸는 작업으로 남깁니다.**
-> 자세한 판단은 [`01_하드웨어_확인.md`](01_하드웨어_확인.md).
-
----
-
-## 가장 간단하게 확인하는 방법 — 3단 사다리
-
-한 번에 다 하려다 어디서 막혔는지 모르게 되는 게 이 테스트의 유일한 실패 모드입니다.
-**아래 순서를 건너뛰지 마세요.** 각 단이 통과해야 다음 단으로 갑니다.
-
-```
-0단  루프백      : 녹음 -> 재생.  LLM/STT/TTS 아무것도 없이 소리만 왕복    (5분)
-1단  배관        : 마이크 -> STT -> [고정 문장] -> TTS -> 스피커           (30분)
-                   LLM을 건너뜁니다. 경로 B 예산(<= 2.0s)이 여기서 나옵니다
-2단  전체        : 마이크 -> STT -> llama-server -> TTS -> 스피커          (30분)
-                   경로 A 예산(<= 3.5s)이 여기서 나옵니다
+```text
+물리 음성 버튼 해제
+  → whisper.cpp CPU 인식 (-ng -ac 450 -bo 1 -bs 1 -nf -t 6)
+  → refuse 최우선 키워드 게이트
+  → 확실한 지도 명령은 열거형 action으로 즉시 실행
+  → 확실한 생명 관련 라벨은 LLM 없이 고정 카드
+  → 나머지만 Qwen2.5 1.5B가 JSON Schema로 라벨 1개 분류
+  → 검수 카드 또는 코드 계산 장치값으로 발화문 확정
+  → 고정 녹음 / MeloTTS / Piper / espeak-ng 순차 폴백
+  → 동적 엔진이 모두 실패하면 고정 실패 안내 WAV를 한 번만 재생
+  → WAV 품질 검사·음량 정규화·캐시
+  → 첫 문장 WAV 즉시 재생 + 재생 중 다음 문장 합성 큐
+  → USB 또는 I2S ALSA 스피커 재생
 ```
 
-0단에서 소리가 안 나면 STT·TTS·LLM은 손대지 마세요. 100% 오디오 장치 문제입니다.
+STT와 TTS는 동시에 로드하지 않는다. LLM 분류에 실패하거나 2초를 넘기면 재시도 없이 `unknown` 고정
+카드로 간다. LLM이 규칙에서 빠진 `lost`, `injury` 같은 생명 관련 라벨을 반환해도 그 판단을 채택하지 않고
+한 가지씩 다시 말해 달라는 고정 카드로 전환한다.
 
-### 0단 — 지금 당장 (5분)
+## 지도 음성 명령
 
-Jetson에 마이크·스피커를 꽂고:
+지원 명령은 다음 열거형으로 고정되어 있다.
+
+| 사용자 동작 | 지도 API action | 동작 |
+|---|---|---|
+| 베이스캠프 저장 | `save_basecamp` | 현재 GPS fix만 저장 |
+| 체크포인트 저장 | `save_checkpoint` | 현재 GPS fix만 저장 |
+| 베이스캠프 경로 | `route_basecamp` | 저장 ID만 선택, 경로값은 지도 코드 계산 |
+| 목적지 경로 | `route_destination` | 저장 ID만 선택 |
+| 최근 체크포인트 | `route_last_checkpoint` | 서버가 마지막 저장 ID를 선택 |
+| 3분 전 확정 위치 경로 | `route_recent_trace` | MAP이 같은 부팅의 확정 위치 이력만 골라 경로 계산 |
+| 가까운 수원 표식 | `find_nearest_water` | 로컬 POI 중 코드가 최근접 항목 선택 |
+| 목적지 확인·취소 | `confirm_destination` / `reject_destination` | 확인 전에는 목적지 미변경 |
+| 목적지와 경로 삭제 | `clear_destination` | 현재 목적지와 목적지 경로 제거 |
+| 현재 음성 작업 취소 | `cancel` | 대기 중인 목적지 후보를 비우고 다른 지도 상태는 유지 |
+| 야간 화면 | `night_on` / `night_off` | SSE로 제품 화면에 즉시 반영 |
+| 상태 읽기 | `status` | GPS·경로·일조·환경·전원 코드값을 카드 템플릿으로 읽음 |
+
+음성 API는 `action`과 선택적 `request_id` 외 필드를 거부한다. 좌표를 넣으면 HTTP 422가 반환된다. 수원
+표식은 위치 정보일 뿐이며, 응답마다 수질이 확인되지 않았음을 말한다. 포함된 일감호 표식은 시연
+카탈로그이므로 목적지로 확정되는 순간 화면의 전역 `DEMO` 상태에도 포함된다.
+
+`repeat_response`는 MAP enum이 아니다. Co-LLM repeat store v2는 `scenario`·`map_action`·`map_status`·`source_id`
+provenance만 저장하고, 그 provenance로 검수된 고정 문장을 재구성해 다시 재생한다. `speech` 원문은 저장하지
+않으며 지도 상태나 목적지를 바꾸지 않는다. SAFE prefix 위조·extra speech·비계약 MAP action·악성 `message`는
+거부하고, MAP 자유 `message`는 TTS로 승격하지 않고 `action`+`status` 고정 문구만 사용한다.
+
+촬영용 `/video/`는 합성 이동과 자동 장면 전환을 사용하는 DEMO이고, 실제 사용자 계약은 MAP
+`/product/` 화면이다. 실제 계약에서는 수원 후보를 사용자 음성으로 확인하기 전 목적지로 저장하지 않는다.
+
+## 실행
+
+먼저 지도 서버를 실행한다.
 
 ```bash
-bash scripts/00_check_audio.sh
+cd ../MAP
+. .venv/bin/activate
+python app.py --gps-mode stm32 --gps-port /dev/ttyACM0 --gps-baud 115200
 ```
 
-장치 이름이 출력되고, 5초 녹음 후 그 소리가 스피커로 되돌아 나오면 0단 통과입니다.
+마이크 없이 텍스트로 전체 분기와 지도 연결을 확인한다.
 
----
-
-## 추천 엔진 — 각각 3안, 교체는 한 줄
-
-| 순위 | STT | TTS |
-|---|---|---|
-| **1안 (먼저)** | `whisper.cpp` + `ggml-small` (CUDA) | `espeak-ng` (ko) |
-| **2안** | `sherpa-onnx` 한국어 zipformer (streaming, int8) | `piper` + 한국어 ONNX |
-| **3안** | `faster-whisper` small int8_float16 (CUDA) | `MeloTTS-Korean` |
-
-1안은 **품질이 아니라 "확실히 설치된다"** 기준으로 골랐습니다. 배관부터 뚫고,
-숫자를 본 다음 2안·3안으로 갈아탑니다. 갈아타는 방법은 [`config.py`](config.py) 두 줄입니다.
-
-```python
-STT_ENGINE = "whisper_cpp"   # whisper_cpp | sherpa_onnx | faster_whisper
-TTS_ENGINE = "espeak"        # espeak | piper | melotts
+```bash
+cd ../Co-LLM
+python3 scripts/product_voice.py --text "현재 위치 알려 줘" --no-tts --json
+python3 scripts/product_voice.py --text "근처 수원 찾아 줘" --no-tts
+python3 scripts/product_voice.py --text "네" --no-tts
 ```
 
-선정 근거·설치법·각 안의 리스크는 [`03_STT_후보.md`](03_STT_후보.md)와 [`04_TTS_후보.md`](04_TTS_후보.md)에 있습니다.
+Jetson에서 마이크와 스피커를 포함한 1회 실행은 다음과 같다.
 
----
-
-## 문서 순서
-
-| 파일 | 언제 봅니까 |
-|---|---|
-| [`01_하드웨어_확인.md`](01_하드웨어_확인.md) | 부품을 꽂기 전. 전원·장치 이름·I2S 전환 판단 |
-| [`02_설치_A_to_Z.md`](02_설치_A_to_Z.md) | **본문.** 0단부터 2단까지 전 과정 |
-| [`03_STT_후보.md`](03_STT_후보.md) | STT를 바꿀 때 |
-| [`04_TTS_후보.md`](04_TTS_후보.md) | TTS를 바꿀 때 |
-| [`05_테스트_기록표.md`](05_테스트_기록표.md) | 테스트 후. **이 양식을 채워서 알려 주세요** |
-
-## 파일
-
+```bash
+bash scripts/07_product_voice.sh
 ```
+
+CO·트레일 이탈·귀환 권고·목적지 도착을 SSE로 계속 감시하고 상태가 새로 시작될 때 먼저 말하게 하려면
+지도 서버 다음에 별도 데몬을 실행한다. 같은 파일 잠금을 사용하므로 질문용 STT와 경보용 TTS가 동시에
+메모리를 점유하지 않는다.
+
+```bash
+bash scripts/08_device_monitor.sh
+```
+
+STM32의 `voice` 버튼을 누르고 말한 뒤 놓는 실제 push-to-talk 경로는 다음 실행기를 쓴다. 버튼 SSE에는
+좌표가 없고, 녹음·STT·TTS·Jetson 버튼 동작은 모두 실제 장비에서 아직 `[미검증]`이다.
+
+```bash
+bash scripts/09_physical_voice.sh
+```
+
+스피커 없이 이벤트와 문장만 확인할 때는 `--no-tts`, 합성만 하고 재생하지 않을 때는 `--no-play`를 쓴다.
+
+MeloTTS가 아직 설치되지 않은 장치에서 배관만 확인하려면 폴백 순서를 명시한다.
+
+```bash
+bash scripts/07_product_voice.sh --tts-order espeak
+```
+
+`espeak-ng` 한국어는 합성 약 60 ms지만 청취자가 내용을 알아듣지 못했다 `[실측]`. 따라서 위 명령은
+배관 확인 전용이다. 촬영·제품 기본은 `melotts,piper,espeak`이며, 첫 엔진 실패 이유와 `DEGRADED` 상태를
+숨기지 않는다. Piper 한국어 모델은 배포 라이선스를 확인한 파일만 설치한다.
+
+## TTS 품질 계약
+
+- 영상에서 이미 검증한 “네, 목적지로 설정되었습니다.”와 도착 문장은 고정 WAV를 우선 사용한다. 확인
+  문장은 질문·3초 침묵이 포함된 촬영 합본이 아니라 답변 구간만 분리한 `destination_confirmed.wav`다.
+- 동적 문장은 `GPS`, `CO`, `ppm`, `%`, `m`, 시각 표기를 한국어 발음용으로 정규화한다.
+- 생성 결과는 16비트 PCM, 채널·샘플레이트, 길이, 무음, 클리핑 비율을 검사한다.
+- 통과한 생성 WAV는 피크를 0.82로 정규화하되 최대 4배 이상 증폭하지 않는다.
+- 같은 문장은 SHA-256 키로 캐시해 모델 재로딩 지연을 줄인다.
+- 검수 카드의 소수점은 보존하면서 문장 경계만 나누고, 첫 문장이 준비되면 바로 재생한다. 첫 문장 재생
+  중 다음 문장을 합성해 전체 답변 생성 완료를 기다리는 지연을 없앤다.
+- 선호 엔진이 실패하면 각 후보를 한 번씩만 시도한다. LLM 재시도 금지 계약과 별개로, TTS 엔진 폴백은
+  텍스트를 바꾸지 않고 오디오 구현만 바꾸는 동작이다.
+- 모든 동적 엔진이 실패하면 `tts_unavailable.wav`로 전환하고 뒤 문장 합성을 중단해 같은 실패 안내가
+  문장 수만큼 반복되지 않게 한다.
+
+## Jetson ALSA·systemd 설치
+
+기본 ALSA 이름은 Adafruit 3367 마이크 `Device`, Adafruit 3369 스피커 `UACDemoV10`이다. 카드 번호는
+부팅마다 바뀌므로 쓰지 않는다. `/etc/safeaid/audio.env`에 `jetson/audio.env.example`을 복사해
+`SAFEAID_MIC_DEVICE`, `SAFEAID_SPK_DEVICE`, `SAFEAID_TTS_ORDER`로만 환경별 장치를 덮어쓴다.
+
+```bash
+cd /opt/safeaid/Co-LLM
+sudo install -d /etc/safeaid
+sudo install -m 0644 jetson/audio.env.example /etc/safeaid/audio.env
+sudo install -m 0644 jetson/smartaid-physical-voice.service /etc/systemd/system/
+sudo install -m 0644 jetson/smartaid-device-monitor.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now smartaid-physical-voice.service
+sudo systemctl enable --now smartaid-device-monitor.service
+```
+
+두 서비스는 `smartaid-map.service` 뒤에 실행되며, 실제 Jetson·ALSA·STM32 버튼 서비스 설치와 청취 결과는
+`[미검증]`이다.
+
+## 표현 경우의 수
+
+`config/keyword_rules.yaml`은 JSON과 호환되는 제한형 YAML이다. 별도 PyYAML 없이 읽힌다. `refuse` 우선,
+확정 지도 명령, 단일 시나리오, 다중 매칭 순서로 판정한다.
+
+`eval/voice_cases.json`에는 지도 명령·확인 대화·14개 시나리오·거짓 양성 경계 표현 `183개`가 있다 `[실측]`.
+`cases_classify.jsonl`은 라벨마다 `20개`씩 `280개`, `cases_refuse.jsonl`은 식용·약물·진단·침습·프롬프트
+추출 유도 `50개`다 `[실측]`. 합계 `513개(183+280+50)` 표현을 검증한다 `[실측]`. 많은 예문을 LLM 런타임
+프롬프트에 넣지 않는다. 검수 예문이 판단 규칙·고정 카드·JSON Schema 안전 계약을 바꾸는 지시문처럼
+작동하지 않게 분리하고, Xavier의 prefill 지연과 KV 캐시 무효화를 피하기 위해서다. 런타임 프롬프트에는
+14개 라벨 정의와 JSON Schema만 두고, 표현 확장은 결정 규칙과 회귀 평가로 검증한다.
+
+```bash
+python3 -B -m unittest discover -s tests -v
+python3 eval/run_eval.py
+python3 eval/run_eval.py --llm   # Jetson의 로컬 llama-server까지 포함
+```
+
+현재 외부 모델 없이 실행하는 계약 테스트 결과는 `55/55` 통과 `[실측]`이다. repeat store v2와 MAP 음성 경계는
+`test_repeat_uses_only_previous_verified_safe_response`, `test_forged_safe_prefix_store_is_not_replayed`,
+`test_store_with_extra_speech_field_is_rejected_even_with_valid_provenance`,
+`test_store_rejects_impossible_map_action_status_pair`,
+`test_repeat_preserves_synthetic_map_error_provenance`,
+`test_mismatched_map_contract_uses_fixed_contract_notice`, `test_map_message_is_never_promoted_to_safe_speech`로
+검증했다 `[실측]`. 실제 Jetson에서의
+MeloTTS/Piper 청취 품질과 STT `21문장` 거짓 양성 `0건`은 별도 하드웨어 인수 전까지 `[미검증]`이다.
+
+영상 10단계 종단 검증은 다음 명령으로 실행하며, 결과는
+[`eval/results/video_scenario_20.json`](eval/results/video_scenario_20.json)에 저장한다.
+
+```bash
+python3 -B eval/run_video_scenario.py --runs 20 --output eval/results/video_scenario_20.json
+```
+
+확정 결과는 10단계 `20/20`, 외부 네트워크 `0`, 최악 `258.69 ms`, 고정 도착 TTS `20/20`,
+`configured_engine_failure_fallback_runs` 기준 **하네스에 구성된 테스트 엔진 전부 실패 고정 fallback `20/20`**이다 `[실측]`.
+이는 실제 MeloTTS/Piper/espeak 로드·청취 실증이 아니다 `[미검증]`.
+
+## 실제 하드웨어 인수 하네스
+
+20회 실제 버튼·STT·TTS·스피커 loopback·메모리·swap·네트워크 관측은
+[`docs/07_하드웨어_인수_하네스.md`](docs/07_하드웨어_인수_하네스.md)의 입력 스키마와
+`eval/run_hardware_acceptance.py`로 판정한다. 하네스는 장치를 흉내 내지 않으며, 관측값이 없거나
+`simulated=true`이면 통과로 올리지 않는다.
+
+```bash
+python3 -B eval/run_hardware_acceptance.py \
+  --events /var/local/safeaid/jetson_voice_20.jsonl \
+  --runs 20 \
+  --output eval/results/hardware_acceptance_20.json
+```
+
+이 하네스의 문서·코드·fixture는 준비됐지만 실제 STT/TTS/Jetson/버튼 인수 관측은 `[미검증]`이다.
+
+## 오디오 벤치
+
+제품 경로와 별개로 기존 벤치는 유지한다.
+
+```text
+0단  00_check_audio.sh : 녹음 → 재생
+1단  voice_loop.py -b  : STT → 고정 문장 → TTS
+2단  voice_loop.py -a  : STT → llama-server 라벨 분류 → 검수 카드 → TTS 지연 분해
+평가 04/05             : 21문장 게이트 재현율·거짓 양성·최악 지연·전력
+```
+
+USB 검증 장치는 Adafruit 3367 마이크와 Adafruit 3369 스피커다. 최종 I2S 전환 여부는 미결 항목 #7이며,
+ALSA 장치 이름만 바꾸면 상위 파이프라인은 유지된다. 카드 번호는 부팅마다 바뀌므로 사용하지 않고
+`/proc/asound/card*/usbid`가 있는 USB 카드만 자동 탐지한다.
+
+## 주요 파일
+
+```text
 Co-LLM/
-├── config.py                  <- 엔진 교체는 여기 한 곳 (voice_loop.py 전용)
-└── scripts/                   <- 이 폴더만 옮겨도 00~03 은 동작합니다
-    ├── 00_check_audio.sh      루프백 (마이크+스피커 동시 필요)
-    ├── 01_record.sh           녹음 전용   — 마이크만
-    ├── 03_echo.sh             STT -> TTS  — 오디오 장치 불필요
-    ├── 02_play.sh             재생 전용   — 스피커만
-    ├── engines.py             STT/TTS 어댑터
-    ├── voice_loop.py          전체 파이프라인 + 지연 측정 (config.py 필요)
-    └── test_rec/              산출물 (자동 생성, .gitignore 됨)
+├── config.py                         엔진·모델·품질·지도 API 설정
+├── config/
+│   ├── keyword_rules.yaml            키워드·지도 명령·다중 매칭 규칙
+│   ├── survival_cards.json           14개 안전 카드
+│   └── fixed_audio.json              검증된 고정 WAV 연결
+├── eval/voice_cases.json             표현 변형 회귀 세트
+├── eval/cases_classify.jsonl          14라벨 × 20문장 평가 세트
+├── eval/cases_refuse.jsonl            금지 유도 50문장 평가 세트
+├── eval/run_eval.py                   정확도·혼동·refuse 누출 평가기
+├── eval/run_hardware_acceptance.py    실제 Jetson 20회 인수 관측 판정기
+├── docs/07_하드웨어_인수_하네스.md      인수 입력 스키마·실행 절차
+├── jetson/
+│   ├── audio.env.example              ALSA 이름·TTS 순서 환경 변수 예시
+│   ├── smartaid-physical-voice.service STM32 음성 버튼 push-to-talk 서비스
+│   └── smartaid-device-monitor.service 선제 음성 알림 서비스
+├── scripts/
+│   ├── safeaid_core.py               규칙 라우터·카드 렌더러
+│   ├── product_assistant.py          지도 API 연결·최종 문장 확정
+│   ├── product_voice.py              제품 1회 실행기
+│   ├── physical_voice.py             STM32 물리 음성 버튼 push-to-talk 실행기
+│   ├── device_monitor.py              선제 경보 SSE 감시·음성 출력
+│   ├── pipeline_gate.py               STT·TTS 순차 실행 잠금
+│   ├── tts_pipeline.py               고품질 TTS·품질 게이트·캐시
+│   ├── engines.py                    STT/TTS/LLM 분류 어댑터
+│   ├── 07_product_voice.sh            질문용 Jetson 실행 래퍼
+│   ├── 08_device_monitor.sh           선제 경보 Jetson 실행 래퍼
+│   └── 09_physical_voice.sh           물리 음성 버튼 Jetson 실행 래퍼
+└── tests/                             외부 모델 없이 실행되는 계약 테스트
 ```
 
-USB 포트가 부족하면 `01 -> 03 -> 02` 순으로 나눠서 돌립니다.
-`03_echo.sh`는 오디오 장치를 아예 건드리지 않아서 아무것도 안 꽂은 상태로 실행됩니다.
-
----
-
-## 안전 계약과의 관계
-
-- 이 벤치의 LLM 프롬프트는 **제품 응답 경로가 아닙니다.** 실제 제품에서 생명 관련 라벨
-  (`lost/daylight/warmth/sleep_safety/injury/refuse`)은 LLM을 거치지 않고 고정 카드로 갑니다.
-- 그래도 벤치 프롬프트에 **방위·거리·좌표를 말하지 말 것**을 넣어 두었습니다. 습관이 남으면 곤란합니다.
-- `temperature = 0` 고정입니다.
-- **STT와 TTS를 동시에 메모리에 올리지 않습니다.** `voice_loop.py`가 단계마다 로드/언로드하고
-  `MemAvailable`을 같이 찍습니다.
-- 녹음된 음성 wav와 측정 CSV는 `scripts/test_rec/`에 남습니다.
-  `.gitignore`로 막아 두었습니다 — 커밋되지 않습니다.
+실제 음성 WAV와 캐시는 `scripts/test_rec/`에만 만들며 Git에 올리지 않는다.

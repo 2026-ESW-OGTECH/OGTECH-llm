@@ -4,7 +4,7 @@ SafeAid Kit의 제한형 온디바이스 LLM 하네스·평가·측정·지도 �
 
 ## 구현 상태
 
-현재 저장소는 오지 생존 도메인 전환 중입니다. P0 하네스·평가 구현 상태는 [조직 PLAN](https://github.com/SmartAid-Kit/.github/blob/main/PLAN.md)과 저장소 이슈를 기준으로 확인합니다.
+현재 저장소는 오지 생존 도메인 전환 중입니다. P0 하네스·평가 구현 상태는 [조직 PLAN](https://github.com/2026-ESCW-OGTECH/.github/blob/main/PLAN.md)과 저장소 이슈를 기준으로 확인합니다.
 
 ## 범위
 

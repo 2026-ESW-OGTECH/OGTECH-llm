@@ -5,7 +5,7 @@
 
 경로·거리는 여기서도 map_engine 이 계산한다. 화면 쪽 JS 는 결과를 그리기만 한다.
 
-    cd smartaid-llm/MAP
+    cd OGTECH-frontend/MAP
     .venv/Scripts/python.exe 시연용/build_map_data.py
 """
 

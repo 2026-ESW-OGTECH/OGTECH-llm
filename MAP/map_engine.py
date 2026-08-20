@@ -16,6 +16,7 @@ import networkx as nx
 EARTH_RADIUS_M = 6_371_009.0
 DEFAULT_MAX_SNAP_M = 250.0
 RUNTIME_SCHEMA_VERSION = 1
+TRAIL_INDEX_CELL_DEG = 0.002
 
 WALKABLE_HIGHWAYS = {
     "bridleway",
@@ -438,6 +439,90 @@ class OfflineMap:
             self.warnings.append(
                 f"서로 끊긴 보행망이 {self.weak_component_count}개입니다. 컴포넌트 간 경로는 만들 수 없습니다"
             )
+        self._trail_segments: list[tuple[float, float, float, float]] = []
+        self._trail_grid: dict[tuple[int, int], list[int]] = {}
+        self._build_trail_index()
+
+    @staticmethod
+    def _trail_cell(lat: float, lon: float) -> tuple[int, int]:
+        return (
+            int((lon + 180.0) // TRAIL_INDEX_CELL_DEG),
+            int((lat + 90.0) // TRAIL_INDEX_CELL_DEG),
+        )
+
+    def _build_trail_index(self) -> None:
+        """1 Hz 이탈 판정을 위해 보행로 선분을 작은 격자에 한 번만 배치한다."""
+
+        seen: set[tuple[str, str, str]] = set()
+        for u, v, _, data in self.graph.edges(keys=True, data=True):
+            coordinates = self._edge_coordinates(str(u), str(v), data)
+            geometry_key = ";".join(f"{lon:.7f},{lat:.7f}" for lon, lat in coordinates)
+            edge_key = (*sorted((str(u), str(v))), geometry_key)
+            if edge_key in seen:
+                continue
+            seen.add(edge_key)
+            for start, end in zip(coordinates[:-1], coordinates[1:]):
+                segment_index = len(self._trail_segments)
+                self._trail_segments.append((start[0], start[1], end[0], end[1]))
+                west_cell, south_cell = self._trail_cell(
+                    min(start[1], end[1]), min(start[0], end[0])
+                )
+                east_cell, north_cell = self._trail_cell(
+                    max(start[1], end[1]), max(start[0], end[0])
+                )
+                for column in range(west_cell, east_cell + 1):
+                    for row in range(south_cell, north_cell + 1):
+                        self._trail_grid.setdefault((column, row), []).append(segment_index)
+
+    @staticmethod
+    def _point_segment_distance_m(
+        lat: float,
+        lon: float,
+        segment: tuple[float, float, float, float],
+    ) -> float:
+        """짧은 보행로 구간을 국소 평면으로 투영해 점-선분 거리를 구한다."""
+
+        lon_a, lat_a, lon_b, lat_b = segment
+        latitude_scale = EARTH_RADIUS_M * radians(1.0)
+        longitude_scale = latitude_scale * max(0.01, cos(radians(lat)))
+        ax = (lon_a - lon) * longitude_scale
+        ay = (lat_a - lat) * latitude_scale
+        bx = (lon_b - lon) * longitude_scale
+        by = (lat_b - lat) * latitude_scale
+        dx = bx - ax
+        dy = by - ay
+        length_squared = dx * dx + dy * dy
+        if length_squared <= 1e-12:
+            return sqrt(ax * ax + ay * ay)
+        projection = max(0.0, min(1.0, -(ax * dx + ay * dy) / length_squared))
+        nearest_x = ax + projection * dx
+        nearest_y = ay + projection * dy
+        return sqrt(nearest_x * nearest_x + nearest_y * nearest_y)
+
+    def trail_offset_m(self, lat: float, lon: float) -> float:
+        """가장 가까운 보행로 선분까지의 거리를 반환한다.
+
+        노드까지의 거리가 아니라 선분까지의 거리이므로 긴 직선 보행로 중앙에서도
+        이탈 거리가 과장되지 않는다.
+        """
+
+        lat = _coordinate(lat, "현재 위도", -90, 90)
+        lon = _coordinate(lon, "현재 경도", -180, 180)
+        center_column, center_row = self._trail_cell(lat, lon)
+        candidates: set[int] = set()
+        for radius in range(1, 6):
+            for column in range(center_column - radius, center_column + radius + 1):
+                for row in range(center_row - radius, center_row + radius + 1):
+                    candidates.update(self._trail_grid.get((column, row), ()))
+            if candidates:
+                break
+        if not candidates:
+            _, node_distance = self._nearest_node(lat, lon)
+            return node_distance
+        return min(
+            self._point_segment_distance_m(lat, lon, self._trail_segments[index])
+            for index in candidates
+        )
 
     def _nearest_node(self, lat: float, lon: float) -> tuple[str, float]:
         node_id, data = min(

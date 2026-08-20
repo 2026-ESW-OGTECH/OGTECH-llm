@@ -1,115 +1,111 @@
-# SafeAid 오프라인 지도 변환 검증기
+# SafeAid 오프라인 지도·STM32 센서 앱
 
-팀의 GraphML 경로 데이터와 Air530 위치 입력을 Jetson에서 읽고, 지도 엔진이 계산한 현재 위치·목적지·경로를 화면과 `DEVICE_STATE`로 확인하는 로컬 전용 앱이다. Python 서버와 Chromium이 모두 Jetson 안에서 `127.0.0.1`로만 통신하며 인터넷, CDN, 외부 폰트, 프런트엔드 프레임워크를 사용하지 않는다.
+Jetson Xavier NX에서 STM32F401RE 센서 허브의 GPS·온습도·기압·CO·RTC·물리 버튼을 받아 7인치 화면에
+표시하고, 오프라인 보행 지도에서 경로·트레일 이탈·일출몰·베이스캠프 귀환 권고 시각을 계산하는 로컬 앱이다.
+센서·버튼·전원 gate의 실제 하드웨어 동작은 모두 아직 `[미검증]`이며, 아래 내용은 현재 소스 코드의 계약이다.
 
-> 지도와 경로를 LLM이 계산하지 않는다. 지도 엔진 코드가 계산한 작은 `DEVICE_STATE`만 LLM의 읽기 전용 입력 후보로 보여 준다. LLM의 경로·방위·거리 생성은 허용하지 않는다.
+## 화면 두 개
 
-## 지원 입력
+| URL | 용도 |
+|---|---|
+| `http://127.0.0.1:8790/product/` | 실제 1024×600 제품 화면 |
+| `http://127.0.0.1:8790/` | 기존 지도 변환·GPS 연결 개발자 도구 |
+| `http://127.0.0.1:8790/video/` | 촬영용 자동 DEMO 화면 |
 
-- `.graphml`: OSMnx 등으로 미리 만든 WGS84 보행 그래프. 권장 경로다.
-- `.osm`, `.xml`: 원본 OSM XML을 읽는 검증용 부분 변환기다. `path`, `footway`, `track`, `steps` 등 주요 보행 way만 다루며 PBF는 지원하지 않는다.
-- 업로드 상한은 64MB `[추정: 검증 앱 메모리 상한]`이다.
+기존 디자인과 개발자 도구는 유지했다. 제품 화면 오른쪽 위의 고정 `DEMO` 칸은 환경 계기로 바뀌었다.
+재생 데이터나 샘플 지도가 실제로 사용될 때만 지도 이름 옆에 작은 `DEMO` 태그가 표시된다.
 
-앱은 입력을 검증한 뒤 `runtime/active_map.json`으로 정규화한다. 원본 업로드와 런타임 산출물은 `runtime/`에만 저장되며 Git에서 제외된다.
+`/video/`는 영상 재현을 위한 합성 이동·장면 자동 전환 화면이므로 사용자 확인을 생략할 수 있다. 실제
+사용자 계약은 `/product/`이며, 물 POI 후보는 음성 확인 전 목적지로 저장하지 않는다.
 
-```mermaid
-flowchart LR
-  A["GraphML 또는 OSM XML"] --> B["좌표·CRS·길이·연결망 검증"]
-  B --> C["런타임 지도 JSON"]
-  G["Air530 NMEA 또는 STM32 GET_FIX"] --> H["체크섬·좌표·fix 검증"]
-  H --> D
-  C --> D["지도 엔진 A* 계산"]
-  D --> E["현재 위치·목적지·경로 표시"]
-  D --> F["작은 DEVICE_STATE 읽기 전용 출력"]
-```
+## 구현 기능
+
+- STM32 `115200 8N1` JSONL 텔레메트리, CRC-16/CCITT-FALSE 검증
+- 직렬 단선 후 2초 간격 자동 재연결 `[출처: gps_service.py]`
+- Air530 fix·마지막 좌표·경과 시간·위성 수·정확도 표시
+- SHT40 온도·습도, BMP390 기압·추세, ZE07-CO ppm·예열·경보 표시
+- DS3231 `0x68` UTC를 표시하되 OSF 또는 날짜·시간 검증 실패 시 `rtc.valid=false`로 fail-closed 처리
+- BMP390 `0x77` 우선·`0x76` 차순 탐색, `pressure_valid`와 10분 이상 표본의 `press_trend` 분리 표시
+- 센서 입력이 3초 넘게 멈추면 live 상태 해제 `[출처: gps_service.py]`
+- 보행로 노드가 아니라 **선분**까지의 트레일 이탈 거리 계산
+- 일출·일몰·시민박명 완전 오프라인 계산
+- 베이스캠프 경로 거리 + 보행 속도 + 안전 여유로 귀환 권고 시각 계산
+- 목적지·베이스캠프·체크포인트 저장 API
+- STM32 `PA0` 전원, `PA1` 체크포인트, `PA4` 음성 버튼 edge를 좌표 없이 검증·전달
+- 전원 버튼 2초 길게 누름 뒤 로컬 정상 종료 ACK와 STM32 `PC9` Jetson 전원 gate 제어
+- CO 경보 시 브라우저 보조음. 1차 물리 경보는 STM32 단독 출력
 
 ## 실행
 
-Jetson Xavier NX의 JetPack 5.1.x 기본 Python 3.8을 기준으로 NetworkX 3.1과 pyserial 3.5를 고정했다 `[출처: requirements.txt]`.
+JetPack 5.1.x 환경에서:
 
 ```bash
-cd smartaid-llm/MAP
+cd OGTECH-llm/MAP
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-python app.py
+python app.py --gps-mode stm32 --gps-port /dev/ttyACM0 --gps-baud 115200
 ```
 
-Chromium에서 `http://127.0.0.1:8790/`을 연다 `[출처: app.py 기본값]`.
-
-하드웨어가 오기 전에는 다음 명령으로 DEMO NMEA를 반복 재생할 수 있다. 화면의 `DEMO` 표시는 유지된다.
+하드웨어 없이 NMEA 경로만 확인할 때:
 
 ```bash
 python app.py --gps-mode replay
 ```
 
-Windows 개발 PC에서는 활성화 명령만 다음처럼 바꾼다.
+replay는 실제 센서가 아니므로 제품 화면에 `DEMO`가 유지된다.
 
-```powershell
-cd smartaid-llm\MAP
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python app.py
-```
+STM32 포트가 아직 없거나 케이블이 분리된 상태에서도 `jetson/start-map.sh`는 서버를 저하 상태로 기동한다.
+제품 화면은 GPS·센서를 회색 대기로 표시하고 위치를 추정하지 않으며, `GpsService`가 2초마다 같은 포트에
+재연결을 시도한다. 포트가 나타나면 서버를 다시 시작하지 않아도 텔레메트리 수신을 재개한다. 이는 센서
+정상 판정이 아니라 단선 상태를 명시적으로 보이는 복구 경로다.
 
-## 화면 사용법
+전체 배선, STM32 빌드, Jetson 복사 파일, systemd와 키오스크 설정은
+[STM32_JETSON_SETUP.md](STM32_JETSON_SETUP.md)에 있다.
 
-1. 시작하면 건국대학교 샘플 GraphML이 자동 변환되고 고정 데모 현재 위치와 목적지가 표시된다.
-2. `오프라인 지도 넣기`에서 새 GraphML 또는 OSM XML을 선택하면 검증·변환·화면 갱신이 연속으로 실행된다.
-3. `현재 위치 지정` 또는 `목적지 지정`을 누르고 지도 안을 터치한다. 두 지점이 있으면 경로를 자동 계산한다.
-4. 오른쪽 `LLM READ-ONLY INPUT`에서 지도 전체가 아닌 제한된 `gps`·`route` 상태만 확인한다.
-5. `GPS 연결`에서 NMEA 재생, Air530 직결, STM32 최종 입력 중 하나를 선택한다.
+## API
 
-모든 수동 좌표와 샘플 좌표는 실제 Air530 측정이 아니므로 화면의 `DEMO` 표시는 숨기지 않는다. 실장 입력은 fix·좌표·위성 수·좌표 경과 시간을 `/api/route`에 전달한다. Air530 직결 GGA에 `acc_m`이 없으면 HDOP를 미터 정확도로 임의 변환하지 않고 `±—`로 표시한다. STM32가 측정 또는 계산 근거와 함께 보고한 `acc_m`만 `±m`로 표시한다.
+| 메서드·경로 | 내용 |
+|---|---|
+| `GET /api/device` | 화면용 통합 센서·항법 상태 |
+| `GET /api/device/events` | 통합 상태 SSE |
+| `GET /api/gps` | 원시 GNSS·센서 수신 상태 |
+| `GET /api/buttons` | 마지막 STM32 물리 버튼 edge와 카운트(좌표 없음) |
+| `GET /api/buttons/events` | 새 물리 버튼 edge만 내보내는 SSE(좌표 없음) |
+| `GET /api/map` | 현재 지도 렌더링 표본 |
+| `POST /api/route` | 명시 좌표 간 지도 엔진 경로 계산 |
+| `GET /api/waypoints` | 저장 지점 조회 |
+| `POST /api/waypoints` | `save_current`, `set`, `select`, `remove` |
+| `GET /api/voice` | 음성 MAP 제어 상태와 허용 action |
+| `GET /api/voice/events` | 음성 명령·화면 상태 SSE |
+| `POST /api/voice/commands` | 숫자 필드 없는 열거형 MAP action 실행 |
+| `POST /api/power/shutdown-ack` | 보류 중인 STM32 전원 종료 요청에만 `POWER OFF ACK`를 큐잉 |
+| `POST /api/power/shutdown-cancel` | ACK 뒤 systemd 종료 요청이 실패한 transaction에만 `POWER OFF CANCEL`을 큐잉 |
 
-fix가 끊기거나 입력이 3초 이상 멈추면 `[출처: gps_service.py의 FIX_STALE_AFTER_S]` 새 좌표를 추정하지 않는다. 마지막 확정 좌표를 회색으로 남기고 `AGE`만 증가시킨다.
+Co-LLM은 저장된 지점의 이름/ID에 대응하는 열거형 action만 호출할 수 있다. 좌표·거리·방위·경로·귀환
+시각을 LLM이 쓰는 API는 제공하지 않는다. 허용 action에는 `clear_destination`가 포함된다.
+`repeat_response`는 MAP action이 아니라 Co-LLM repeat store v2가 `scenario`·`map_action`·`map_status`·`source_id` provenance로 검수 고정 문장을 재구성해 재생하는 별도 동작이다. `speech` 원문은 저장하지 않는다.
 
-Air530 도착 당일 절차와 STM32 JSON 계약은 [GPS_BRINGUP.md](GPS_BRINGUP.md)를 따른다.
+## 물리 버튼·전원 gate 계약
 
-## 완전 오프라인 설치
+- 버튼은 active-low, 40 ms debounce이며 `PA0=power`, `PA1=checkpoint`, `PA4=voice`다. 서버는
+  `power/checkpoint/voice`와 `pressed/released/held_ms`만 수용하고 좌표는 절대 전달하지 않는다.
+- `PA0`을 2초 이상 누른 뒤 놓으면 STM32가 `shutdown_requested`를 내보낸다. Jetson의
+  `smartaid-power-manager`는 CRC로 검증된 pending을 확인하고 `/api/power/shutdown-ack`로 ACK를 먼저
+  보낸 뒤 `systemctl poweroff --no-block`을 요청한다. STM32는 ACK 뒤 `PC9` gate 차단을 **90초 후**로
+  예약한다. systemd 요청이 실패하면 서비스가 즉시 `POWER OFF CANCEL`을 보내 예약을 취소한다.
+  ACK가 없으면 **120초 후** pending을 취소하고 gate를 유지한다.
+- gate가 꺼진 상태에서 전원 버튼을 놓으면 STM32가 `PC9`을 다시 켠다. 이 절차는 전원 차단 사실이나
+  정상 종료 성공을 화면에서 추정·확정하지 않는다. 모든 실제 버튼·gate 검증은 `[미검증]`이다.
 
-인터넷이 되는 개발 PC에서 Linux용 Jetson 가상환경과 같은 Python으로 wheel을 미리 받는다.
+## 지도 입력
 
-```bash
-python -m pip download -r requirements.txt -d wheels
-```
+- `.graphml`: WGS84 보행 그래프 권장
+- `.osm`, `.xml`: 검증용 OSM XML 부분 변환
+- 업로드 상한 64 MB `[추정: 검증 앱 메모리 상한]`
+- 런타임 지도·저장 지점은 `runtime/`에 두고 Git에서 제외
 
-`MAP` 폴더와 `wheels`를 Jetson으로 복사한 뒤 네트워크를 끊고 설치한다.
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --no-index --find-links wheels -r requirements.txt
-python app.py --gps-mode replay
-```
-
-`--no-index`가 인터넷 패키지 저장소 접속을 막는다 `[출처: 실행 명령]`. 앱 실행 중에도 외부 요청은 없으며 지도·GNSS·경로 API는 모두 로컬이다.
-
-지도 화면에는 `© OpenStreetMap contributors` 귀속을 항상 표시한다. 샘플 데이터의 생성 범위와 라이선스는 `sample_data/ATTRIBUTION.md`를 따른다.
-
-## 검증 규칙
-
-- 좌표는 WGS84(EPSG:4326)만 허용한다.
-- 모든 엣지는 0보다 큰 유한 `length`가 있어야 한다.
-- 현재 위치나 목적지가 보행망에서 250m보다 멀면 `[추정: 검증용 기본 스냅 상한]` 경로를 만들지 않는다.
-- 끊긴 보행망이 여러 개면 경고하고, 서로 다른 연결망 사이의 경로를 만들지 않는다.
-- OSMnx의 WKT `LINESTRING`을 보존해 곡선 도로를 직선 노드 연결로 단순화하지 않는다.
-- 지도 렌더링은 도로 12,000개까지만 표시한다 `[추정: Chromium 검증 화면 상한]`. 경로 계산 그래프는 줄이지 않는다.
-- 대형 지도는 앞부분 도로만 자르지 않고 지도 전체를 격자로 나눠 공간 균등 표본을 표시한다.
-
-## 대형 GraphML 확인
-
-광진구 보행 그래프 `gwangjin_walk.graphml` 25.96MB는 노드 51,756개와 방향 엣지 122,126개를 포함한다 `[실측]`. 개발 PC에서 현재 앱의 전체 업로드는 13.11초, 저장 후 재시작은 3.10초에 완료됐다 `[실측]`. Jetson 처리 시간은 실제 장치에서 별도로 측정해야 한다 `[미검증]`.
-
-업로드 중에는 지도 위에 현재 단계를 크게 표시한다. 별도 터미널에서는 다음 API로 상태를 확인할 수 있다.
-
-```bash
-curl -s http://127.0.0.1:8790/api/import-status
-curl -s http://127.0.0.1:8790/api/map | python3 -c 'import json,sys; m=json.load(sys.stdin); print(m["source_name"], m["statistics"])'
-```
-
-광진구 파일이 활성화됐다면 `source_name`은 `gwangjin_walk.graphml`, 노드와 엣지는 각각 51,756개와 122,126개로 나온다 `[실측]`. 계속 933개와 2,668개가 나오면 이전 앱 프로세스가 실행 중이거나 업로드가 실패한 상태다.
+건국대 샘플 지도와 NMEA는 공개 데모 데이터다. 실제 GPS 트랙은 커밋하지 않는다.
 
 ## 테스트
 
@@ -117,8 +113,11 @@ curl -s http://127.0.0.1:8790/api/map | python3 -c 'import json,sys; m=json.load
 python -B -m unittest discover -s tests -v
 ```
 
-회귀 테스트 18개는 고정 데모 경로 913.08m·26개 노드, 대형 지도 공간 표본, NMEA 체크섬, fix/no-fix, STM32 JSON, 마지막 좌표 보존, 로컬 GPS API와 경로 연계를 확인한다 `[실측]`. 이 값은 실제 사용자 이동 기록이 아니라 팀원이 넣은 공개 캠퍼스 좌표 쌍이다.
-
-## 범위
-
-이 폴더는 지도·GNSS 변환 파이프라인 검증용이다. Air530 실물 직렬 연결은 장치 도착 후 검증해야 한다 `[미검증]`. 최종 제품의 지도 타일 서빙과 항법 API는 `smartaid-backend`, 7인치 키오스크 지도 UI는 `smartaid-frontend`로 옮겨야 한다. PMTiles/MBTiles 배경 지도와 체크포인트 DB는 아직 연결하지 않았다.
+현재 결과는 `76/76` 통과 `[실측: 2026-08-19]`이다. 테스트는 지도 회귀, NMEA/STM32 fix 호환, 텔레메트리 CRC 손상
+거부, stale 센서, 선분 이탈 거리, 저장 지점·귀환 시각, 서울 일출몰과 극지 예외, 음성 action·부팅
+진단·제품 화면, DS3231 UTC·stale·OSF 경계, BMP390 확인 상태, 물리 버튼·전원 ACK, 3분 전 위치 역추적을 포함한다. 경로 cache는 `test_crossing_route_cache_is_rejected_until_progress_disambiguates_it`,
+`test_overlapping_route_cache_uses_late_progress_to_disambiguate`,
+`test_route_cache_includes_exact_eight_meter_boundary`, `test_route_cache_recomputes_above_eight_meter_boundary`로
+자기교차/겹침 진행량 disambiguation, 정확히 8 m 포함, 8 m 초과 재경로를 검증하며 zero-length polyline 경계도
+검증한다. 브라우저 증거는
+[`test-results/product_ui_1024x600.json`](test-results/product_ui_1024x600.json)이다.
