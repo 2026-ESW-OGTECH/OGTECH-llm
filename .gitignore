@@ -19,8 +19,3 @@ results/*.jsonl
 # 내부 검토 문서 — 공개 저장소에 올리지 않음
 docs2/08_적대적_검토.md
 docs2/09_심사위원_예상질문.md
-
-# 로컬 전용 산출물 — legacy/ 로 보관하고 커밋하지 않음
-MAP/videos/
-MAP/test-results/
-MAP/시연용/video_app (*).js

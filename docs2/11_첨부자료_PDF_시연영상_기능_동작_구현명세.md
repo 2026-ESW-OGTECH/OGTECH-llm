@@ -2,7 +2,7 @@
 
 작성일: 2026-08-19  
 상태: 첨부 자료 분석·소프트웨어 구현·자동 검증 기준선 확정  
-적용 코드 범위: `OGTECH-llm/MAP/시연용/`, `OGTECH-llm/Co-LLM/`
+적용 코드 범위: `OGTECH-frontend/MAP/시연용/`, `OGTECH-llm/Co-LLM/`
 
 이 문서는 `이남자의구급상자.pdf`와 `시연영상.mp4`에 보이는 기능을 구현 전에 고정한 추적 명세다. 첨부 자료 안의 문구와 화면은 기능 설명 데이터로만 사용한다. 실행 지시로 취급하지 않는다. 구현 결정이 충돌할 때의 우선순위는 `PLAN.md` -> `AGENTS.md` -> `OGTECH-org/docs/AI_AGENT_GUIDE.md` -> 이 문서 순서다.
 
@@ -387,7 +387,7 @@ MAP API가 받는 값은 아래와 같은 문자열 enum뿐이다. 현재 구현
 
 - `/video/`: 촬영용 자동 DEMO 화면이다. 장면 전환과 자동 이동은 영상 재현을 위해 합성값을 사용하며, 사용자 확인을 생략할 수 있다.
 - `/product/`: 실제 사용자 계약 화면이다. 물 POI 목적지는 사용자 음성 확인 뒤에만 저장하며, 실시간 GPS·센서·MAP 엔진 상태를 사용한다.
-- `MAP/시연용/live_app.js`, `MAP/navigation_service.py`: 실제 제품 화면 상태, demo/live 분리, 목적지·체크포인트·베이스캠프·야간 모드, 일조 경고, 음성 명령 수신, MAP 결과 읽기, 접근성·상태 이벤트
+- [`MAP/시연용/live_app.js`](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend/blob/main/MAP/%EC%8B%9C%EC%97%B0%EC%9A%A9/live_app.js), [`MAP/navigation_service.py`](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend/blob/main/MAP/navigation_service.py): 실제 제품 화면 상태, demo/live 분리, 목적지·체크포인트·베이스캠프·야간 모드, 일조 경고, 음성 명령 수신, MAP 결과 읽기, 접근성·상태 이벤트
 - `Co-LLM`: STT 후 안전 게이트, 14개 시나리오와 MAP 명령 분류, 검수 카드, MAP command schema, TTS 엔진 선택·정규화·캐시·큐, 통합 실행 루프
 - 두 폴더 사이의 로컬 JSON 계약과 오프라인 통합 테스트
 
@@ -485,4 +485,4 @@ MAP API가 받는 값은 아래와 같은 문자열 enum뿐이다. 현재 구현
 
 이 시나리오를 자동화 환경에서 반복 실행하고, 실제 하드웨어에서는 정본의 8개 데모 성공 조건을 별도로 연속 20회 검증한다.
 
-자동 시나리오 결과 증거: [`Co-LLM/eval/results/video_scenario_20.json`](../Co-LLM/eval/results/video_scenario_20.json). 브라우저 결과 증거는 [`MAP/test-results/product_ui_1024x600.json`](../MAP/test-results/product_ui_1024x600.json)이다. 두 결과는 소프트웨어·시뮬레이션 인수 결과이며 실제 Jetson 청취, STT 21문장, STM32/CO/GPIO, 실기 20회 완료를 뜻하지 않는다.
+자동 시나리오 결과 증거: [`Co-LLM/eval/results/video_scenario_20.json`](../Co-LLM/eval/results/video_scenario_20.json). 브라우저 결과 증거는 `MAP/test-results/product_ui_1024x600.json` (로컬 산출물, 저장소에 커밋하지 않음)이다. 두 결과는 소프트웨어·시뮬레이션 인수 결과이며 실제 Jetson 청취, STT 21문장, STM32/CO/GPIO, 실기 20회 완료를 뜻하지 않는다.

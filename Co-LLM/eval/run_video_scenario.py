@@ -12,6 +12,7 @@ import argparse
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import socket
 import sys
@@ -23,7 +24,35 @@ from unittest.mock import patch
 
 CO_LLM_ROOT = Path(__file__).resolve().parents[1]
 SMARTAID_ROOT = CO_LLM_ROOT.parent
-MAP_ROOT = SMARTAID_ROOT / "MAP"
+
+
+def _resolve_map_root() -> Path:
+    """지도 엔진 위치를 찾는다.
+
+    지도 엔진의 정본은 OGTECH-frontend/MAP 하나뿐이다. 이 저장소에는 사본을 두지 않는다.
+    이 하네스는 두 저장소를 함께 clone한 상태에서 도는 통합 검증용이다.
+    """
+    override = os.getenv("SAFEAID_MAP_ROOT", "").strip()
+    candidates = [Path(override)] if override else []
+    candidates += [
+        SMARTAID_ROOT.parent / "OGTECH-frontend" / "MAP",
+        SMARTAID_ROOT / "MAP",
+    ]
+    for candidate in candidates:
+        if (candidate / "map_engine.py").is_file():
+            return candidate.resolve()
+    tried = "
+  ".join(str(c) for c in candidates)
+    raise SystemExit(
+        "지도 엔진을 찾지 못했습니다. OGTECH-frontend 저장소를 이 저장소와 같은 상위 폴더에 "
+        "clone하거나 SAFEAID_MAP_ROOT로 경로를 지정하세요.
+"
+        f"찾아본 경로:
+  {tried}"
+    )
+
+
+MAP_ROOT = _resolve_map_root()
 for import_path in (CO_LLM_ROOT, CO_LLM_ROOT / "scripts", MAP_ROOT):
     value = str(import_path)
     if value not in sys.path:

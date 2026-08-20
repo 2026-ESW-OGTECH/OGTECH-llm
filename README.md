@@ -37,9 +37,9 @@ Co-LLM/                        ★ 실행 파이프라인과 검증 (이 저장�
 │  └─ fixed_audio.json         사전 합성 음성
 ├─ eval/                       14 라벨 분류 · refuse 누출 평가, 하드웨어 인수 러너
 ├─ tests/                      단위 테스트 55개
+├─ assets/audio/               검수된 고정 안내 음성 (사전 합성 wav)
 └─ jetson/                     systemd 유닛과 오디오 환경 설정
 
-MAP/                           지도 엔진 (OGTECH-frontend/MAP 과 동일 내용)
 docs2/                         조사·계산 근거 문서 ★ 현재 도메인 정본
 config/ · harness/ · runner/ · results/   하네스 자리
 ```
@@ -93,18 +93,36 @@ Xavier 실측 prefill이 413 tok/s입니다. **3,300 토큰짜리 프롬프트�
 [USER]                 ← 마지막
 ```
 
+## 지도 엔진은 이 저장소에 없습니다
+
+경로·방위·거리를 계산하는 지도 엔진의 정본은
+**[OGTECH-frontend/MAP](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend/tree/main/MAP)** 하나뿐입니다.
+이 저장소에는 사본을 두지 않습니다. 같은 모듈이 두 곳에 있으면 어느 쪽이 정본인지 알 수 없고,
+한쪽만 고쳤을 때 조용히 갈라지기 때문입니다.
+
+`Co-LLM/eval/run_video_scenario.py`는 지도 엔진과 음성 경로를 함께 도는 통합 검증 하네스라
+두 저장소가 모두 필요합니다. 같은 상위 폴더에 나란히 clone하면 자동으로 찾고,
+다른 곳에 있으면 `SAFEAID_MAP_ROOT`로 지정합니다.
+
+```bash
+git clone https://github.com/2026-ESCW-OGTECH/OGTECH-llm.git
+git clone https://github.com/2026-ESCW-OGTECH/OGTECH-frontend.git
+
+# 경로가 다르면
+SAFEAID_MAP_ROOT=/path/to/OGTECH-frontend/MAP python Co-LLM/eval/run_video_scenario.py
+```
+
 ## 검증
 
 ```bash
 cd Co-LLM && python -B -m unittest discover -s tests
-cd MAP     && python -B -m unittest discover -s tests   # networkx==3.1 필요
 ```
 
 | 대상 | 결과 |
 |---|---|
 | `Co-LLM/tests/` | 55 tests, OK `[실측: 2026-08-20]` |
-| `MAP/tests/` | 80 tests, 1 failure `[실측: 2026-08-20]` |
 
+지도 엔진 테스트(80건)는 [OGTECH-frontend](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend)에서 돕니다.
 의존성이 준비되지 않아 실행하지 못한 테스트는 통과로 간주하지 않습니다.
 
 ## 안전 경계
@@ -114,7 +132,7 @@ cd MAP     && python -B -m unittest discover -s tests   # networkx==3.1 필요
 - **모호하면 키워드가 결정하지 않습니다.** 두 라벨이 동시에 잡히면 LLM 분류로 강등하되,
   `refuse` 키워드가 있으면 다른 매칭을 무시하고 무조건 `refuse`입니다.
 - LLM은 경로·방위·거리·진단·처치·**야생 동식물 식용 판정**을 생성하지 않습니다.
-- 실제 GPS 트랙과 내부 검토 자료는 커밋하지 않습니다. `MAP/`은 DEMO 좌표와 OSM 파생 샘플만 씁니다.
+- 실제 GPS 트랙과 내부 검토 자료는 커밋하지 않습니다.
 
 ## 문서
 
