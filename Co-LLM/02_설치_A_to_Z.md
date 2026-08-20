@@ -23,7 +23,7 @@ python -m pip install --upgrade pip
 
 ```bash
 cd ~/safeaid_ai
-git clone https://github.com/2026-ESCW-OGTECH/OGTECH-llm.git
+git clone https://github.com/2026-ESW-OGTECH/OGTECH-llm.git
 ln -sfn ~/safeaid_ai/OGTECH-llm/Co-LLM ~/safeaid_ai/colm
 ```
 

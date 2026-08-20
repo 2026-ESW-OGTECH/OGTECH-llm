@@ -387,7 +387,7 @@ MAP API가 받는 값은 아래와 같은 문자열 enum뿐이다. 현재 구현
 
 - `/video/`: 촬영용 자동 DEMO 화면이다. 장면 전환과 자동 이동은 영상 재현을 위해 합성값을 사용하며, 사용자 확인을 생략할 수 있다.
 - `/product/`: 실제 사용자 계약 화면이다. 물 POI 목적지는 사용자 음성 확인 뒤에만 저장하며, 실시간 GPS·센서·MAP 엔진 상태를 사용한다.
-- [`MAP/시연용/live_app.js`](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend/blob/main/MAP/%EC%8B%9C%EC%97%B0%EC%9A%A9/live_app.js), [`MAP/navigation_service.py`](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend/blob/main/MAP/navigation_service.py): 실제 제품 화면 상태, demo/live 분리, 목적지·체크포인트·베이스캠프·야간 모드, 일조 경고, 음성 명령 수신, MAP 결과 읽기, 접근성·상태 이벤트
+- [`MAP/시연용/live_app.js`](https://github.com/2026-ESW-OGTECH/OGTECH-frontend/blob/main/MAP/%EC%8B%9C%EC%97%B0%EC%9A%A9/live_app.js), [`MAP/navigation_service.py`](https://github.com/2026-ESW-OGTECH/OGTECH-frontend/blob/main/MAP/navigation_service.py): 실제 제품 화면 상태, demo/live 분리, 목적지·체크포인트·베이스캠프·야간 모드, 일조 경고, 음성 명령 수신, MAP 결과 읽기, 접근성·상태 이벤트
 - `Co-LLM`: STT 후 안전 게이트, 14개 시나리오와 MAP 명령 분류, 검수 카드, MAP command schema, TTS 엔진 선택·정규화·캐시·큐, 통합 실행 루프
 - 두 폴더 사이의 로컬 JSON 계약과 오프라인 통합 테스트
 

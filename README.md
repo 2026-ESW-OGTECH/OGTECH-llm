@@ -1,7 +1,7 @@
 # OGTECH-llm — 온디바이스 음성 파이프라인과 평가 하네스
 
 **SafeAid Kit** (2026 임베디드 소프트웨어 경진대회 자유공모 / 팀 OGTECH) 의 LLM 저장소입니다.
-[조직 개요](https://github.com/2026-ESCW-OGTECH) · [다른 저장소 안내](https://github.com/2026-ESCW-OGTECH/.github)
+[조직 개요](https://github.com/2026-ESW-OGTECH) · [다른 저장소 안내](https://github.com/2026-ESW-OGTECH/.github)
 
 ---
 
@@ -96,7 +96,7 @@ Xavier 실측 prefill이 413 tok/s입니다. **3,300 토큰짜리 프롬프트�
 ## 지도 엔진은 이 저장소에 없습니다
 
 경로·방위·거리를 계산하는 지도 엔진의 정본은
-**[OGTECH-frontend/MAP](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend/tree/main/MAP)** 하나뿐입니다.
+**[OGTECH-frontend/MAP](https://github.com/2026-ESW-OGTECH/OGTECH-frontend/tree/main/MAP)** 하나뿐입니다.
 이 저장소에는 사본을 두지 않습니다. 같은 모듈이 두 곳에 있으면 어느 쪽이 정본인지 알 수 없고,
 한쪽만 고쳤을 때 조용히 갈라지기 때문입니다.
 
@@ -105,8 +105,8 @@ Xavier 실측 prefill이 413 tok/s입니다. **3,300 토큰짜리 프롬프트�
 다른 곳에 있으면 `SAFEAID_MAP_ROOT`로 지정합니다.
 
 ```bash
-git clone https://github.com/2026-ESCW-OGTECH/OGTECH-llm.git
-git clone https://github.com/2026-ESCW-OGTECH/OGTECH-frontend.git
+git clone https://github.com/2026-ESW-OGTECH/OGTECH-llm.git
+git clone https://github.com/2026-ESW-OGTECH/OGTECH-frontend.git
 
 # 경로가 다르면
 SAFEAID_MAP_ROOT=/path/to/OGTECH-frontend/MAP python Co-LLM/eval/run_video_scenario.py
@@ -122,7 +122,7 @@ cd Co-LLM && python -B -m unittest discover -s tests
 |---|---|
 | `Co-LLM/tests/` | 55 tests, OK `[실측: 2026-08-20]` |
 
-지도 엔진 테스트(80건)는 [OGTECH-frontend](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend)에서 돕니다.
+지도 엔진 테스트(80건)는 [OGTECH-frontend](https://github.com/2026-ESW-OGTECH/OGTECH-frontend)에서 돕니다.
 의존성이 준비되지 않아 실행하지 못한 테스트는 통과로 간주하지 않습니다.
 
 ## 안전 경계
