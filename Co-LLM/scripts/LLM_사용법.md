@@ -335,4 +335,4 @@ WHISPER_PROMPT_FILE=stt_prompt_s.txt bash 06_demo.sh 5
 | 장치가 `busy` | PulseAudio가 잡고 있음 | `fuser -v /dev/snd/*` 로 확인 후 `pulseaudio -k` |
 | `prompt :` 줄이 안 보임 | 프롬프트 파일이 없음 | 0-1 로 파일 확인 |
 
-관련 문서: [AGENTS.md](../../../AGENTS.md) 5절 STT 실행 구성 · [stt_prompt.txt](stt_prompt.txt) 머리말
+관련 문서: [저장소 README](../../README.md) STT 실행 구성과 실측표 · [stt_prompt.txt](stt_prompt.txt) 머리말

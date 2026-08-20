@@ -246,4 +246,4 @@ pkill -f "http.server"
 | 노드/엣지가 계속 933·2668 | 이전 앱이 아직 떠 있음 | `pkill -f app.py` 후 다시 실행 |
 | 화면 오른쪽에 패널이 보임 | 촬영 보조 패널 | `H` 를 눌러 숨깁니다 |
 
-관련 문서: [README.md](README.md) 검증 앱 상세 · [시연용/README.md](시연용/README.md) 화면 설계 근거 · [AGENTS.md](../../AGENTS.md) 6절 UI 규칙
+관련 문서: [README.md](README.md) 검증 앱 상세 · [시연용/README.md](시연용/README.md) 화면 설계 근거 · [프런트엔드 README](https://github.com/2026-ESCW-OGTECH/OGTECH-frontend/blob/main/README.md) UI 물리 스케일과 색 규율
