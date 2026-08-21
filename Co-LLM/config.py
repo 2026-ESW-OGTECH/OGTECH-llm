@@ -60,19 +60,39 @@ TTS_ENGINE = os.environ.get("SAFEAID_TTS_ENGINE", TTS_ENGINE_ORDER[0])
 
 # --- 1안: whisper.cpp -----------------------------------------
 # 구버전은 바이너리 이름이 whisper-cli 가 아니라 main 입니다.
-WHISPER_CPP_BIN = _p("~/safeaid_ai/stt/whisper.cpp/build/bin/whisper-cli")
+WHISPER_CPP_BIN = _p(os.environ.get(
+    "SAFEAID_WHISPER_CPP_BIN", "~/safeaid_ai/stt/whisper.cpp/build/bin/whisper-cli"
+))
 # small 이 아니라 base 입니다. 1,494 ms vs 3,468 ms `[실측]` 이고 경로 B 예산이
 # 2.0초입니다. 모델 확정은 미결 #8 — 21문장 벤치가 닫습니다.
-WHISPER_CPP_MODEL = _p("~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin")
+WHISPER_CPP_MODEL = _p(os.environ.get(
+    "SAFEAID_WHISPER_CPP_MODEL", "~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin"
+))
 WHISPER_CPP_THREADS = 6      # 4 -> 6 은 -9% `[실측]`. nproc 6 이 상한
 WHISPER_CPP_LANG = "ko"
 
-# AGENTS.md 5절에서 동결된 플래그입니다. 튜닝 손잡이가 아닙니다.
+# docs/00_동결_결정.md §5에서 동결된 플래그입니다. 튜닝 손잡이가 아닙니다.
 #   -ac 450  30초 멜 윈도 패딩이 지연의 81%. 16,933 -> 1,494 ms `[실측]`
 #            300 으로 내리면 환각과 12.6초 폭주 `[실측]`
 #   -bo 1 -bs 1  beam 은 +33% 지연에 출력 변화 0 `[실측]`
+#   --vad -vm    P5 벤치 `base_cpu_vad` = 최종 선정 구성. 무음 구간의 디코더 반복이
+#                최댓값을 3,363 -> 1,495 ms 로 줄였습니다 `[실측]`
+#                (docs/measurements.csv · docs/decision_matrix.csv).
+#                판정은 중앙값이 아니라 최댓값이므로 경로 B 예산 2.0초를 통과하는
+#                구성은 이것뿐입니다.
 # -ng(GPU 미사용)는 설정이 아니라 고정이므로 engines.py 안에 박아 둡니다.
-WHISPER_CPP_FLAGS = ["-ac", "450", "-bo", "1", "-bs", "1", "-nf"]
+#
+# VAD 모델은 whisper.cpp 본체와 따로 내려받습니다.
+#   cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
+# 파일이 없으면 engines.py 가 --vad 를 자동으로 빼고 경고합니다(런타임 보호).
+WHISPER_VAD_MODEL = _p(os.environ.get(
+    "SAFEAID_WHISPER_VAD_MODEL",
+    "~/safeaid_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin",
+))
+WHISPER_CPP_FLAGS = [
+    "-ac", "450", "-bo", "1", "-bs", "1", "-nf",
+    "--vad", "-vm", WHISPER_VAD_MODEL,
+]
 
 # 초기 프롬프트(컨텍스트 바이어싱)의 정본은 scripts/stt_prompt.txt 한 곳입니다.
 # 셸 스크립트(03/06)와 이 파이썬 경로가 같은 파일을 읽으므로 사본이 갈라지지 않습니다.
@@ -104,7 +124,9 @@ WHISPER_CPP_PROMPT = (
 
 # --- 2안: sherpa-onnx 한국어 zipformer (오프라인) ---------------
 # 압축을 푼 뒤 실제 파일명을 확인해서 맞추세요. epoch/avg 숫자가 다를 수 있습니다.
-SHERPA_DIR = _p("~/safeaid_ai/stt/sherpa-onnx-zipformer-korean-2024-06-24")
+SHERPA_DIR = _p(os.environ.get(
+    "SAFEAID_SHERPA_DIR", "~/safeaid_ai/stt/sherpa-onnx-zipformer-korean-2024-06-24"
+))
 SHERPA_ENCODER = "encoder-epoch-99-avg-1.int8.onnx"
 SHERPA_DECODER = "decoder-epoch-99-avg-1.onnx"
 SHERPA_JOINER = "joiner-epoch-99-avg-1.int8.onnx"
@@ -129,7 +151,7 @@ ESPEAK_SPEED = 150       # 130~170. 야외에서는 느린 쪽이 알아듣기 �
 
 # --- 2안: piper ------------------------------------------------
 PIPER_BIN = "piper"
-PIPER_MODEL = _p("~/safeaid_ai/tts/piper/ko.onnx")
+PIPER_MODEL = _p(os.environ.get("SAFEAID_PIPER_MODEL", "~/safeaid_ai/tts/piper/ko.onnx"))
 
 # --- 3안: MeloTTS-Korean ---------------------------------------
 MELO_LANGUAGE = "KR"
@@ -154,8 +176,8 @@ TTS_MAX_GAIN = 4.0
 # 5. LLM (경로 A 에서만 사용)
 #    llama-server 직결입니다. 제품의 backend(8765) 가 아닙니다.
 # =============================================================
-LLM_URL = "http://127.0.0.1:8080/v1/chat/completions"
-LLM_MODEL = "qwen2.5-1.5b-instruct"
+LLM_URL = os.environ.get("SAFEAID_LLM_URL", "http://127.0.0.1:8080/v1/chat/completions")
+LLM_MODEL = os.environ.get("SAFEAID_LLM_MODEL", "qwen2.5-1.5b-instruct")
 LLM_CLASSIFY_TIMEOUT_S = 2.0
 
 SCENARIO_IDS = [
@@ -191,7 +213,7 @@ PIPELINE_LOCK_PATH = Path(
 PIPELINE_LOCK_TIMEOUT_S = 30.0
 
 # =============================================================
-# 6. 예산 (AGENTS.md)
+# 6. 예산 (docs/00_동결_결정.md §2·§4)
 # =============================================================
 BUDGET_PATH_B_S = 2.0    # 경로 B: 키워드 게이트 -> 고정 카드 -> TTS
 BUDGET_PATH_A_S = 3.5    # 경로 A: 라벨 분류 -> 검수 카드 -> TTS

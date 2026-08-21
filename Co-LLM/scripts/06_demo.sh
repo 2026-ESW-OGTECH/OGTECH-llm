@@ -56,7 +56,7 @@ done
 SEC="${SEC:-4}"
 
 ESPEAK_SPEED="${ESPEAK_SPEED:-140}"
-BUDGET_MS=2000          # 경로 B budget, AGENTS.md 4절
+BUDGET_MS=2000          # 경로 B budget, ../docs/00_동결_결정.md §4
 
 # ---- settings (file, not env -- survives the next login) -----------
 # shellcheck source=stt_prompt.sh
@@ -245,7 +245,7 @@ MS_TTS=$(( (t3 - t2) / 1000000 ))
 
 # ---- 4. play ------------------------------------------------------
 # The measured span is 'record end -> first sound', because that is the part
-# the user actually waits through (AGENTS.md 5절 측정 기준).
+# the user actually waits through (../docs/00_동결_결정.md §5 측정 기준).
 T_FIRST=$(date +%s%N)
 MS_TOTAL=$(( (T_FIRST - T_REC_END) / 1000000 ))
 

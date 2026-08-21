@@ -10,15 +10,34 @@
 
 SAFEAID_STT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Frozen in AGENTS.md 5 'STT 실행 구성'. Not tuning knobs:
+# Frozen in ../docs/00_동결_결정.md §5 'STT 실행 구성'. Not tuning knobs:
 #   -ng      GPU path SIGSEGVs on this board (cudaMalloc 91 MiB) [실측]
 #   -ac 450  30s mel padding is 81% of the latency. 16,933 -> 1,494 ms [실측]
 #            300 is too low: hallucination + a 12.6 s runaway [실측]
 #   -bo 1 -bs 1  beam search costs +33% and changed nothing [실측]
 #   -nf      no fallback re-decode
+#   --vad    P5 bench 'base_cpu_vad' is the selected config: silence-region
+#            decoder loops pushed the max to 3,363 ms, VAD brings it to
+#            1,495 ms [실측]. 판정은 중앙값이 아니라 최댓값입니다.
 # Do not tune one of these at a time. Run-to-run spread is up to 1.7x [실측],
 # so a single run cannot tell two configs apart.
-SAFEAID_STT_FLAGS="${SAFEAID_STT_FLAGS:--ng -ac 450 -bo 1 -bs 1 -nf}"
+#
+# The VAD model is a separate download:
+#   cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
+# Passing --vad without it makes whisper-cli die on model load, so the flags are
+# only added when the file is actually there -- the same rule engines.py uses.
+SAFEAID_STT_VAD_MODEL="${SAFEAID_STT_VAD_MODEL:-${HOME}/safeaid_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin}"
+
+if [ -z "${SAFEAID_STT_FLAGS:-}" ]; then
+  SAFEAID_STT_FLAGS="-ng -ac 450 -bo 1 -bs 1 -nf"
+  if [ -f "${SAFEAID_STT_VAD_MODEL}" ]; then
+    SAFEAID_STT_FLAGS="${SAFEAID_STT_FLAGS} --vad -vm ${SAFEAID_STT_VAD_MODEL}"
+  else
+    echo "WARN: VAD model not found: ${SAFEAID_STT_VAD_MODEL}" >&2
+    echo "      Running 후보 B (no VAD). 최댓값이 경로 B 예산 2.0초를 넘길 수 있습니다 [실측]." >&2
+    echo "      Fix: cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2" >&2
+  fi
+fi
 
 # 4 -> 6 threads is only -9% [실측]; 6 is what nproc gives on MODE_15W_6CORE.
 SAFEAID_STT_THREADS="${SAFEAID_STT_THREADS:-6}"

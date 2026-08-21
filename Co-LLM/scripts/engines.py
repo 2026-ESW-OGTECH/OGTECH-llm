@@ -10,7 +10,7 @@
         tts.synth(text, out_wav)
 
 `with` 블록을 벗어나면 언로드됩니다.
-AGENTS.md 규칙: STT와 TTS를 동시에 메모리에 올리지 않습니다.
+../docs/00_동결_결정.md §2 규칙: STT와 TTS를 동시에 메모리에 올리지 않습니다.
 
 CLI 서브프로세스 방식(whisper.cpp / piper / espeak-ng)은 프로세스가 끝나면
 메모리가 커널에 반납되므로 이 규칙을 공짜로 지킵니다. 대신 호출마다 모델을
@@ -38,7 +38,7 @@ import config as C  # noqa: E402
 # =============================================================
 
 def mem_available_mb():
-    """MemAvailable(MB). AGENTS.md 게이트는 1 GB 입니다."""
+    """MemAvailable(MB). ../docs/00_동결_결정.md §2 게이트는 1 GB 입니다."""
     try:
         with open("/proc/meminfo", "r") as f:
             for line in f:
@@ -47,6 +47,53 @@ def mem_available_mb():
     except OSError:
         pass
     return -1
+
+
+_VAD_WARNED = [False]
+
+
+def whisper_flags(flags=None, vad_model=None):
+    """동결 플래그를 돌려주되, VAD 모델이 없으면 `--vad` 를 빼고 경고합니다.
+
+    ../docs/00_동결_결정.md §5의 최종 선정 구성은 `--vad -vm ggml-silero-v5.1.2.bin`
+    입니다(측정 근거: docs/measurements.csv `base_cpu_vad`). 그런데 VAD 모델은
+    whisper.cpp 본체와 따로 내려받는 파일이라 없을 수 있고, 없는 채로 `--vad` 를
+    넘기면 whisper-cli 가 모델 로드에 실패해 그대로 죽습니다.
+
+    그래서 기본값은 선정 구성 그대로 두되, 파일이 실제로 있을 때만 넘깁니다.
+    빠지면 후보 B(`-ac 450 -nf`)로 내려가며 중앙값은 비슷하지만 최댓값이
+    3,363 ms 까지 튑니다 `[실측]`. 조용히 내려가면 안 되므로 한 번 경고합니다.
+    """
+    flags = list(C.WHISPER_CPP_FLAGS if flags is None else flags)
+    vad_model = C.WHISPER_VAD_MODEL if vad_model is None else vad_model
+    if "--vad" not in flags:
+        return flags
+    if vad_model and os.path.exists(vad_model):
+        return flags
+
+    if not _VAD_WARNED[0]:
+        _VAD_WARNED[0] = True
+        sys.stderr.write(
+            "WARN: VAD 모델이 없어 --vad 를 뺍니다: %s\n"
+            "      최종 선정 구성(base_cpu_vad)이 아니라 후보 B로 동작합니다. "
+            "최댓값이 경로 B 예산 2.0초를 넘길 수 있습니다 `[실측]`.\n"
+            "      복구: cd ~/safeaid_ai/stt/whisper.cpp && "
+            "bash ./models/download-vad-model.sh silero-v5.1.2\n" % vad_model
+        )
+
+    out = []
+    drop_value = False
+    for item in flags:
+        if drop_value:
+            drop_value = False
+            continue
+        if item == "--vad":
+            continue
+        if item in ("-vm", "--vad-model"):
+            drop_value = True
+            continue
+        out.append(item)
+    return out
 
 
 def record(out_wav, seconds=None, device=None):
@@ -142,14 +189,15 @@ class WhisperCppSTT(_Engine):
             "-l", C.WHISPER_CPP_LANG,
             "-t", str(C.WHISPER_CPP_THREADS),
             # -ng: GPU 미사용. 설정 항목이 아니라 고정입니다.
-            # AGENTS.md 실행 타깃 원칙이 STT를 CPU로 못박았고,
+            # ../docs/00_동결_결정.md §5 실행 타깃 원칙이 STT를 CPU로 못박았고,
             # Xavier에서 GPU 경로는 통합 메모리 91 MiB 할당에 실패해
             # cudaMalloc OOM -> SIGSEGV 로 죽습니다 [실측].
             "-ng",
         ]
         # -ac 450 등 동결된 플래그. 빠지면 같은 오디오가 1.5초가 아니라
         # 7.7초 걸립니다 `[실측]` — 경로 B 예산 2.0초를 혼자 넘깁니다.
-        cmd += list(C.WHISPER_CPP_FLAGS)
+        # whisper_flags() 는 VAD 모델이 없을 때만 --vad 를 빼고 경고합니다.
+        cmd += whisper_flags()
         # 도메인 프롬프트. 셸 스크립트와 같은 stt_prompt.txt 를 읽습니다.
         if C.WHISPER_CPP_PROMPT:
             cmd += ["--prompt", C.WHISPER_CPP_PROMPT]

@@ -29,13 +29,13 @@ WHISPER_THREADS="${WHISPER_THREADS:-${SAFEAID_STT_THREADS}}"
 ESPEAK_SPEED="${ESPEAK_SPEED:-140}"
 
 # -ng = do NOT use the GPU. This is not a tuning knob:
-#   1. AGENTS.md pins STT to the CPU backend (74M params -- kernel launch
+#   1. ../docs/00_동결_결정.md §5 pins STT to the CPU backend (74M params -- kernel launch
 #      overhead dominates, and GPU measured 2.7x worse latency).
 #   2. Xavier shares one memory pool between "VRAM" and system RAM. Without
 #      -ng whisper.cpp took the CUDA path, failed to cudaMalloc 91 MiB and
 #      died with SIGSEGV -- printing nothing, which this script used to
 #      misreport as an empty transcription (i.e. as a microphone fault).
-# -ac 450 and the greedy flags are now the frozen set (AGENTS.md 5절), so they
+# -ac 450 and the greedy flags are now the frozen set (../docs/00_동결_결정.md §5), so they
 # come from stt_prompt.sh rather than being retyped. Override for one run:
 #   WHISPER_FLAGS="-ng" bash 03_echo.sh
 WHISPER_FLAGS="${WHISPER_FLAGS:-${SAFEAID_STT_FLAGS}}"

@@ -213,7 +213,7 @@ cd ~/safeaid_ai/llm
 ls models/    # qwen2.5-1.5b-instruct-q4_k_m.gguf 가 있어야 함
 ```
 
-`AGENTS.md`에 동결된 실행 옵션 그대로 띄웁니다.
+`docs/00_동결_결정.md` §5에 동결된 실행 옵션 그대로 띄웁니다.
 
 ```bash
 ~/safeaid_ai/llm/llama.cpp/build/bin/llama-server \
@@ -258,7 +258,7 @@ python scripts/voice_loop.py --path a
 [TOTAL] 녹음 종료 -> 첫 소리 : 2.26 s   (목표 <= 3.50 s)
 ```
 
-LLM이 1초를 크게 넘으면 프롬프트 길이부터 보세요. `AGENTS.md` 기준 Xavier prefill은
+LLM이 1초를 크게 넘으면 프롬프트 길이부터 보세요. `docs/00_동결_결정.md` §5 기준 Xavier prefill은
 413 tok/s [실측]이므로 **프롬프트 토큰 수가 곧 지연**입니다. 벤치 프롬프트는 60토큰 안에 맞춰 두었습니다.
 
 ---
@@ -295,4 +295,4 @@ LLM이 1초를 크게 넘으면 프롬프트 길이부터 보세요. `AGENTS.md`
 2. **경로 B 예산 2.0초가 현실적인가** — STT+TTS 실측
 3. **경로 A 예산 3.5초가 현실적인가** — STT+LLM+TTS 실측
 4. 세 예산 중 어디를 깎아야 하는가 — 단계별 초 단위 분해
-5. `AGENTS.md` 미결 항목 #2(**한국어 TTS 엔진 확정**)의 후보 3안 중 하나
+5. `docs/00_동결_결정.md` §10 미결 항목 #2(**한국어 TTS 엔진 확정**)의 후보 3안 중 하나
