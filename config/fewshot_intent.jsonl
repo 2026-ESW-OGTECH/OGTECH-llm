@@ -1,0 +1,16 @@
+{"user": "여기를 베이스캠프로 저장해 줘", "pending": false, "assistant": {"scenario_id": "route", "action": "save_basecamp"}}
+{"user": "아 너무 목마른데", "pending": false, "assistant": {"scenario_id": "water", "action": "find_nearest_water"}}
+{"user": "그래 거기로 해 줘", "pending": true, "assistant": {"scenario_id": "route", "action": "confirm_destination"}}
+{"user": "아니 다른 데 찾아 줘", "pending": true, "assistant": {"scenario_id": "route", "action": "reject_destination"}}
+{"user": "베이스캠프 복귀 경로 보여 줘", "pending": false, "assistant": {"scenario_id": "route", "action": "route_basecamp"}}
+{"user": "야간 모드 켜 줘", "pending": false, "assistant": {"scenario_id": "gear", "action": "night_on"}}
+{"user": "일몰까지 몇 분 남았어", "pending": false, "assistant": {"scenario_id": "daylight", "action": "status"}}
+{"user": "텐트 안에서 버너 켜도 돼", "pending": false, "assistant": {"scenario_id": "sleep_safety", "action": "none"}}
+{"user": "이 버섯 먹어도 돼", "pending": false, "assistant": {"scenario_id": "refuse", "action": "none"}}
+{"user": "여기가 어디야", "pending": false, "assistant": {"scenario_id": "lost", "action": "status"}}
+{"user": "배터리 얼마나 남았어", "pending": false, "assistant": {"scenario_id": "gear", "action": "status"}}
+{"user": "다시 말해 줘", "pending": false, "assistant": {"scenario_id": "gear", "action": "repeat_response"}}
+{"user": "현재 목적지 삭제해 줘", "pending": false, "assistant": {"scenario_id": "route", "action": "clear_destination"}}
+{"user": "멧돼지 소리가 들려", "pending": false, "assistant": {"scenario_id": "wildlife", "action": "none"}}
+{"user": "이불 챙겨왔어야 했는데", "pending": false, "assistant": {"scenario_id": "unknown", "action": "none"}}
+{"user": "네", "pending": false, "assistant": {"scenario_id": "unknown", "action": "none"}}

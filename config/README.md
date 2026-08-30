@@ -1,36 +1,24 @@
-# config
+# config — 시연용 LLM 하네스 설정
 
-동결된 LLM 역할 3개에 맞춰 **새로 작성해야 한다.** 아직 비어 있다.
+동결된 LLM 역할 3개(분류 · 대상/동작 추출 · 카드 다듬기)에 맞춘 설정. 설계는 `docs2/13_demo_harness_design.md`, 코드는 `harness/`.
 
-1. 시나리오 분류 → **14개 라벨 중 하나.** 출력 라벨 1개.
-2. 질의 대상 추출 → `target` × `ask`. **값이 아니라 "무엇을 묻는지"만.**
-3. 카드 맞춤 문장 → 2~4줄, 약 96토큰.
+| 파일 | 내용 | 상태 |
+|---|---|---|
+| `harness_policy.json` | 주소·타임아웃·허용 동작·polish 모드(off). 시연 프로필 | 적용(2026-08-30) |
+| `system_prompt_ko.txt` | 역할 1+2 시스템 프롬프트. 완전 고정, KV 캐시 대상 | 검토용 |
+| `fewshot_intent.jsonl` | few-shot 16턴(시연 대사 중심). 고정 프리픽스 | 검토용 |
+| `schema_intent.json` | `{"scenario_id": enum14, "action": enum16}` strict | 검토용 |
+| `schema_classify.json` | `{"scenario_id": enum14}` — 기존 `classify_scenario` 호환 | 검토용 |
+| `system_prompt_polish_ko.txt` `schema_polish.json` `polish_forbidden.json` | 역할 3. `lines[2..4]` 각 40자, 금지어 | 구현·시연 off |
+| `stt_lexicon.json` | STT 오인식 보정(라우팅 입력 전용) | 검토용 |
+| `keyword_rules_demo.yaml` | 시연 변형 발화 오버레이(정본이 놓친 것만, refuse 없음) | 검토용 |
+| `demo_script.json` | 시연 대사 정본 — 발화·변형·기대 라벨/동작/문장 | 검토용 |
+| `llama_server.args` | llama-server 옵션(동결 §5) | 검토용 |
 
-허용 `scenario_id`:
+정본 `keyword_rules.yaml`·`survival_cards.json`은 `../Co-LLM/config/`에 있고 backend와 바이트 일치가 강제된다. 여기 파일은 그 사본이 아니다.
 
-```
-lost, route, daylight, weather, shelter, warmth, water, food,
-sleep_safety, injury, wildlife, gear, refuse, unknown
-```
+## 절대 규칙 (변경 없음)
 
-## 만들 파일
-
-| 파일 | 내용 |
-|---|---|
-| `system_prompt_ko.txt` | 완전 고정. KV 캐시 대상 |
-| `schema_classify.json` | enum 14개 |
-| `schema_extract.json` | `target` × `ask` |
-| `schema_polish.json` | `lines[2..4]`, 각 40자 이내 |
-| `keyword_rules.yaml` | 1차 분류 + **refuse 게이트** |
-| `llama_server.args` | `-fa`, cache q8_0, `--cache-reuse 256`, `--mlock`, `-b 512 -ub 512` |
-
-## 절대 규칙
-
-- **좌표·방위·거리 숫자 필드를 스키마에 넣지 않는다.** 자리가 없으면 환각도 없다.
-- `confidence` 필드는 넣지 않는다. 안전 판단에 쓰지 않을 값을 생성하는 것은 지연 낭비다.
-- `refuse`는 모델이 아니라 **키워드 게이트가 먼저** 잡는다. "먹/식용/버섯"은 모델에 도달하기 전에 차단한다.
-- 경로 B(`lost`/`daylight`/`warmth`/`sleep_safety`/`injury`/`refuse`)는 LLM을 거치지 않는다.
-- `temperature = 0` 고정.
-
-`legacy/Gemma 4 E2B/config/`의 구 스키마는 벡터 RAG 전제라 참고만 하고 복사하지 않는다.
-구 의료 도메인 라벨 9개(`bleeding` 등)와 SMS 필드 추출은 폐기되었다. 근거는 `docs2/03`, `docs2/05`.
+- 좌표·방위·거리 숫자 필드를 스키마에 넣지 않는다. `confidence` 없음.
+- `refuse`·생명 라벨은 정본 규칙과 guard가 결정한다. LLM 출력으로 승격하지 않는다.
+- `temperature = 0`, `seed` 고정, 프리픽스 고정.

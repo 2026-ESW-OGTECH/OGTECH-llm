@@ -28,6 +28,20 @@ from product_assistant import (  # noqa: E402
 from pipeline_gate import exclusive_pipeline  # noqa: E402
 from tts_pipeline import TtsPipeline  # noqa: E402
 
+# 시연 하네스(OGTECH-llm/harness): STT 사전 → 정본 규칙 → 시연 오버레이 → LLM 의도({라벨, 지도 동작}) → guard.
+# 하네스 구성이 없거나 깨지면 기존 ProductAssistant 경로로 그대로 동작한다.
+_LLM_ROOT = str(Path(__file__).resolve().parents[2])
+if _LLM_ROOT not in sys.path:
+    sys.path.append(_LLM_ROOT)  # 끝에 붙인다 — Co-LLM/config.py 등 기존 모듈을 가리지 않도록
+try:
+    from harness import DemoAssistant, build_harness  # noqa: E402
+
+    HARNESS = build_harness()  # OGTECH-llm/config/harness_policy.json
+    HARNESS_ERROR = None
+except Exception as exc:  # noqa: BLE001 — 하네스 실패가 음성 경로를 막으면 안 된다
+    HARNESS = None
+    HARNESS_ERROR = f"{type(exc).__name__}: {exc}"
+
 
 _SYNTHESIS_DONE = object()
 
@@ -42,6 +56,20 @@ def _produce_sentences(pipeline, text, output_wav, queue, timing):
     finally:
         timing["tts_s"] = time.monotonic() - started
         queue.put(_SYNTHESIS_DONE)
+
+
+def _build_assistant(client: MapApiClient):
+    store = VerifiedResponseStore(C.LAST_VERIFIED_RESPONSE_PATH)
+    if HARNESS is not None:
+        return DemoAssistant(
+            client,
+            router=HARNESS.router,
+            polisher=HARNESS.polisher,
+            classifier=E.classify_scenario,  # intent 비활성 시에만 쓰는 구 분류기
+            response_store=store,
+        )
+    print(f"[WARN] 시연 하네스 없이 실행: {HARNESS_ERROR}", file=sys.stderr)
+    return ProductAssistant(client, classifier=E.classify_scenario, response_store=store)
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,20 +141,19 @@ def run_once(args: argparse.Namespace, index: int) -> dict[str, object]:
         raise RuntimeError("음성을 인식하지 못했습니다. 원본 녹음을 확인하세요")
 
     client = MapApiClient(args.map_url, timeout_s=C.MAP_API_TIMEOUT_S)
-    assistant = ProductAssistant(
-        client,
-        classifier=E.classify_scenario,
-        response_store=VerifiedResponseStore(C.LAST_VERIFIED_RESPONSE_PATH),
-    )
+    assistant = _build_assistant(client)
     started = time.monotonic()
     result = assistant.handle_text(heard)
     route_s = time.monotonic() - started
+    trace = dict(getattr(getattr(assistant, "router", None), "last_trace", None) or {})
 
     print(f'[STT ] {stt_s:.3f} s  "{heard}"')
     print(
         f"[ROUTE] {result.decision.scenario_id} · {result.decision.source} · "
         f"map={result.decision.map_action or '-'} · {route_s:.3f} s"
     )
+    if trace:
+        print(f"[HARN] {trace.get('stage')} · {trace.get('reason')} · 입력 {trace.get('normalized')!r}")
     print(f"[CARD] {result.source_id}")
     print(f"[SAY ] {result.speech}")
 
@@ -179,6 +206,7 @@ def run_once(args: argparse.Namespace, index: int) -> dict[str, object]:
         "scenario_id": result.decision.scenario_id,
         "map_action": result.decision.map_action,
         "decision_source": result.decision.source,
+        "harness_stage": trace.get("stage"),
         "source_id": result.source_id,
         "stt_s": round(stt_s, 3),
         "route_s": round(route_s, 3),

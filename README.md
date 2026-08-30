@@ -12,19 +12,21 @@
 LLM은 판단 주체가 아니라 **정해진 계약 안에서 텍스트만 다루는 부품**입니다.
 경로·방위·거리는 **출력 스키마에 숫자 필드 자체가 없어** 환각할 자리가 없습니다.
 
-### LLM이 실제로 하는 일 — 지금은 분류 하나뿐입니다
+### LLM이 실제로 하는 일 — 의도 판단 enum 2개(시연 하네스), 문장 생성은 없음
 
-설계 계약([`docs/00_frozen_decisions.md`](Co-LLM/docs/00_frozen_decisions.md) §4)은 역할 3개를 적어 두었지만,
-**저장소에 코드로 있는 것은 1번뿐입니다.** 문서와 코드가 갈라지지 않도록 현재 상태를 그대로 적습니다.
+설계 계약([`docs/00_frozen_decisions.md`](Co-LLM/docs/00_frozen_decisions.md) §4)은 역할 3개를 적어 두었습니다.
+2026-08-30 시연 하네스([`harness/`](harness/README.md))가 ①②를 한 호출로 합쳐 구현했고, ③은 구현만 있고 시연 프로필에서는 꺼 둡니다.
+문서와 코드가 갈라지지 않도록 현재 상태를 그대로 적습니다.
 
 | 구분 | 내용 | 코드 근거 |
 |---|---|---|
-| **구현됨 — 14라벨 분류 1개** | 출력은 **enum 라벨 1개**(`scenario_id`, JSON Schema strict, `max_tokens=16`). 재시도 없이 실패하면 `unknown`. 규칙 게이트가 라벨을 못 고른 발화만 여기로 옵니다. **생명 라벨(`lost·daylight·warmth·sleep_safety·injury·refuse`)은 LLM이 내놓아도 채택하지 않고** 고정 카드로 내립니다 | [`scripts/engines.py`](Co-LLM/scripts/engines.py) `classify_scenario()` · [`scripts/ogtech_core.py`](Co-LLM/scripts/ogtech_core.py) `RuleRouter.resolve()` |
+| **구현됨(2026-08-30) — 의도 판단 `{scenario_id, action}`** | `product_voice.py`가 `DemoAssistant`를 씁니다. STT 보정 사전 → 정본 규칙 → 시연 오버레이 규칙 → (놓친 발화만) LLM이 **enum 2개**(라벨 14 × 지도 동작 14+`none`+`repeat_response`, `max_tokens=32`, 타임아웃 2.0 s, 재시도 없음) → guard가 생명 라벨·비허용 동작·확인 대기 밖 `confirm`을 걸러 고정 카드로 내립니다. 시연 대사 11턴·변형 66개는 LLM 호출 없이 규칙에서 확정됩니다 | [`harness/intent.py`](harness/intent.py) · [`harness/guard.py`](harness/guard.py) · [`harness/demo_router.py`](harness/demo_router.py) · [`config/demo_script.json`](config/demo_script.json) |
+| **구 경로 — 14라벨 분류 1개**(`intent.enabled=false`일 때만) | 출력은 **enum 라벨 1개**(`scenario_id`, JSON Schema strict, `max_tokens=16`). 재시도 없이 실패하면 `unknown`. 규칙 게이트가 라벨을 못 고른 발화만 여기로 옵니다. **생명 라벨(`lost·daylight·warmth·sleep_safety·injury·refuse`)은 LLM이 내놓아도 채택하지 않고** 고정 카드로 내립니다 | [`scripts/engines.py`](Co-LLM/scripts/engines.py) `classify_scenario()` · [`scripts/ogtech_core.py`](Co-LLM/scripts/ogtech_core.py) `RuleRouter.resolve()` |
 | **문장 생성 — LLM 미사용** | 사용자가 듣는 문장은 **규칙 라우팅 + 검수 카드 템플릿**이 만듭니다. 검수된 고정 문장에, 코드가 계산한 장치값(GPS 정확도·위성 수·트레일 이탈 m·CO ppm·전원 %)만 끼워 넣습니다. 이 경로에 모델은 없습니다 | [`scripts/ogtech_core.py`](Co-LLM/scripts/ogtech_core.py) `CardRenderer.render()` |
-| **설계 목표(미구현)** | ② 질의 대상 추출(`target` × `ask`) ③ 카드 맞춤 문장 2~4줄(~96 토큰). 계약만 있고 구현이 없습니다 | — |
+| **③ 카드 맞춤 문장 — 구현, 시연에서는 off** | 2~4줄·줄당 40자, 숫자는 카드 원문에 있는 것만, 금지어 guard. `polish.mode=off`(shadow/speak는 llama-server `--parallel 2 -c 4096` 필요 — `--parallel 1`에서는 intent 프리픽스 KV 캐시를 지웁니다) | [`harness/polish.py`](harness/polish.py) |
 
-그래서 **"경로 A = LLM이 카드를 다듬는다"는 아직 문서상의 계약입니다.** 현재 두 경로의 차이는
-문장을 누가 쓰느냐가 아니라, **시나리오 라벨을 규칙이 정했느냐 LLM이 정했느냐**뿐입니다.
+사용자가 듣는 문장은 여전히 **검수 카드와 코드 계산값**뿐입니다. 두 경로의 차이는
+문장을 누가 쓰느냐가 아니라, **라벨과 지도 동작을 규칙이 정했느냐 LLM이 정했느냐**입니다.
 
 ## 구성
 
@@ -49,7 +51,7 @@ Co-LLM/                        ★ 실행 파이프라인과 검증 (이 저장�
 └─ jetson/                     systemd 유닛과 오디오 환경 설정
 
 docs2/                         조사·계산 근거 문서 ★ 현재 도메인 정본
-config/ · harness/ · runner/ · results/   하네스 자리
+config/ · harness/ · eval/ · runner/ · tests/ · results/   시연 하네스 (2026-08-30 주입 — harness/README.md)
 ```
 
 ## 확정된 실행 구성
