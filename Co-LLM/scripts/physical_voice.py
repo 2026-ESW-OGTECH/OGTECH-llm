@@ -115,7 +115,7 @@ def button_events(base_url: str) -> Iterator[dict[str, Any]]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="SafeAid STM32 물리 음성 버튼 데몬")
+    parser = argparse.ArgumentParser(description="OGTECH STM32 물리 음성 버튼 데몬")
     parser.add_argument("--map-url", default=C.MAP_API_URL)
     parser.add_argument("--stt", default=C.STT_ENGINE)
     parser.add_argument("--tts-order", default=",".join(C.TTS_ENGINE_ORDER))

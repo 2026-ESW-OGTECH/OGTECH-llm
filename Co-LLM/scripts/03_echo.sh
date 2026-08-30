@@ -8,7 +8,7 @@
 #
 #   bash 03_echo.sh                        # uses test_rec/rec.wav
 #   bash 03_echo.sh test_rec/rec_1.wav
-#   WHISPER_MODEL=~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin bash 03_echo.sh
+#   WHISPER_MODEL=~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin bash 03_echo.sh
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,22 +23,22 @@ TXT="${RES}/echo.txt"
 # shellcheck source=stt_prompt.sh
 . "${HERE}/stt_prompt.sh"
 
-WHISPER_BIN="${WHISPER_BIN:-${SAFEAID_STT_BIN}}"
-WHISPER_MODEL="${WHISPER_MODEL:-${HOME}/safeaid_ai/stt/whisper.cpp/models/ggml-small.bin}"
-WHISPER_THREADS="${WHISPER_THREADS:-${SAFEAID_STT_THREADS}}"
+WHISPER_BIN="${WHISPER_BIN:-${OGTECH_STT_BIN}}"
+WHISPER_MODEL="${WHISPER_MODEL:-${HOME}/ogtech_ai/stt/whisper.cpp/models/ggml-small.bin}"
+WHISPER_THREADS="${WHISPER_THREADS:-${OGTECH_STT_THREADS}}"
 ESPEAK_SPEED="${ESPEAK_SPEED:-140}"
 
 # -ng = do NOT use the GPU. This is not a tuning knob:
-#   1. ../docs/00_동결_결정.md §5 pins STT to the CPU backend (74M params -- kernel launch
+#   1. ../docs/00_frozen_decisions.md §5 pins STT to the CPU backend (74M params -- kernel launch
 #      overhead dominates, and GPU measured 2.7x worse latency).
 #   2. Xavier shares one memory pool between "VRAM" and system RAM. Without
 #      -ng whisper.cpp took the CUDA path, failed to cudaMalloc 91 MiB and
 #      died with SIGSEGV -- printing nothing, which this script used to
 #      misreport as an empty transcription (i.e. as a microphone fault).
-# -ac 450 and the greedy flags are now the frozen set (../docs/00_동결_결정.md §5), so they
+# -ac 450 and the greedy flags are now the frozen set (../docs/00_frozen_decisions.md §5), so they
 # come from stt_prompt.sh rather than being retyped. Override for one run:
 #   WHISPER_FLAGS="-ng" bash 03_echo.sh
-WHISPER_FLAGS="${WHISPER_FLAGS:-${SAFEAID_STT_FLAGS}}"
+WHISPER_FLAGS="${WHISPER_FLAGS:-${OGTECH_STT_FLAGS}}"
 
 # Domain vocabulary hint. Kept OUT of WHISPER_FLAGS because that variable is
 # deliberately word-split, which would shred a phrase containing spaces.
@@ -47,7 +47,7 @@ WHISPER_FLAGS="${WHISPER_FLAGS:-${SAFEAID_STT_FLAGS}}"
 # Default is the file, so it applies without being typed. '+set' not ':-':
 # WHISPER_PROMPT="" must mean "no prompt", not "fall back to the file".
 if [ "${WHISPER_PROMPT+set}" != "set" ]; then
-  WHISPER_PROMPT="$(safeaid_read_prompt "$(safeaid_prompt_file)")" || WHISPER_PROMPT=""
+  WHISPER_PROMPT="$(ogtech_read_prompt "$(ogtech_prompt_file)")" || WHISPER_PROMPT=""
 fi
 PROMPT_ARGS=()
 [ -n "${WHISPER_PROMPT}" ] && PROMPT_ARGS=(--prompt "${WHISPER_PROMPT}")
@@ -68,7 +68,7 @@ if [ ! -x "${WHISPER_BIN}" ]; then
     echo "FAIL: whisper.cpp binary not found:"
     echo "  ${WHISPER_BIN}"
     echo "  ${ALT}"
-    echo "  build it first -- see 02_설치_A_to_Z.md step 2, or override:"
+    echo "  build it first -- see 02_install_a_to_z.md step 2, or override:"
     echo "  WHISPER_BIN=/path/to/whisper-cli bash 03_echo.sh"
     exit 1
   fi
@@ -76,7 +76,7 @@ fi
 
 if [ ! -f "${WHISPER_MODEL}" ]; then
   echo "FAIL: model not found: ${WHISPER_MODEL}"
-  echo "  cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-ggml-model.sh small"
+  echo "  cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-ggml-model.sh small"
   exit 1
 fi
 

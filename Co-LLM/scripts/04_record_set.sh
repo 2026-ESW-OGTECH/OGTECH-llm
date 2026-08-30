@@ -116,6 +116,6 @@ echo "------------------------------------------------------------"
 ls -l "${RES}"/ko_*.wav 2>/dev/null
 echo
 echo "NEXT: unplug the mic (nothing needs to be plugged), then"
-echo "  bash 05_bench.sh base ~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 450 -bo 1 -bs 1 -nf"
+echo "  bash 05_bench.sh base ~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 450 -bo 1 -bs 1 -nf"
 echo "  WHISPER_PROMPT=\"오지 등산 상황입니다. 목적지, 트레일, 능선, 계곡, 일몰, 야영, 텐트, 식수, 버섯, 저체온, 방향, 거리\" \\"
-echo "    bash 05_bench.sh base_prompt ~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 450 -bo 1 -bs 1 -nf"
+echo "    bash 05_bench.sh base_prompt ~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 450 -bo 1 -bs 1 -nf"

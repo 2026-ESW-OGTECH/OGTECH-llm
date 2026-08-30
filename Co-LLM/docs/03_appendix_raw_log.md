@@ -1,6 +1,6 @@
 # 부록 B — 원시 로그
 
-본문 [`01_본문.md`](01_본문.md)의 수치가 나온 터미널 출력 전문입니다.
+본문 [`01_main.md`](01_main.md)의 수치가 나온 터미널 출력 전문입니다.
 가공하지 않았습니다. 요약 수치는 [`measurements.csv`](measurements.csv)에 있습니다.
 
 수집 환경: `kit@kit-desktop`, Jetson Xavier NX, 2026-08-04.

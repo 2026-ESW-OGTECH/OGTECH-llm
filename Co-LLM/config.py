@@ -29,10 +29,10 @@ SAMPLE_DIR = RESULT_DIR
 #    카드 번호(hw:1,0)는 USB 꽂는 순서에 따라 바뀌므로 쓰지 않습니다.
 # =============================================================
 MIC_DEVICE = os.environ.get(
-    "SAFEAID_MIC_DEVICE", "plughw:CARD=Device,DEV=0"
+    "OGTECH_MIC_DEVICE", "plughw:CARD=Device,DEV=0"
 )  # Adafruit 3367 Mini USB Microphone
 SPK_DEVICE = os.environ.get(
-    "SAFEAID_SPK_DEVICE", "plughw:CARD=UACDemoV10,DEV=0"
+    "OGTECH_SPK_DEVICE", "plughw:CARD=UACDemoV10,DEV=0"
 )  # Adafruit 3369 Mini USB Stereo Speaker
 
 REC_SECONDS = 5          # 한 번에 녹음할 초. --seconds 로 덮어쓸 수 있습니다
@@ -48,10 +48,10 @@ STT_ENGINE = "whisper_cpp"    # whisper_cpp | sherpa_onnx | faster_whisper
 # espeak-ng는 청취 명료도 실패 `[실측]` 때문에 최종 비상 폴백으로만 씁니다.
 TTS_ENGINE_ORDER = tuple(
     item.strip()
-    for item in os.environ.get("SAFEAID_TTS_ORDER", "melotts,piper,espeak").split(",")
+    for item in os.environ.get("OGTECH_TTS_ORDER", "melotts,piper,espeak").split(",")
     if item.strip()
 )
-TTS_ENGINE = os.environ.get("SAFEAID_TTS_ENGINE", TTS_ENGINE_ORDER[0])
+TTS_ENGINE = os.environ.get("OGTECH_TTS_ENGINE", TTS_ENGINE_ORDER[0])
 
 
 # =============================================================
@@ -61,17 +61,17 @@ TTS_ENGINE = os.environ.get("SAFEAID_TTS_ENGINE", TTS_ENGINE_ORDER[0])
 # --- 1안: whisper.cpp -----------------------------------------
 # 구버전은 바이너리 이름이 whisper-cli 가 아니라 main 입니다.
 WHISPER_CPP_BIN = _p(os.environ.get(
-    "SAFEAID_WHISPER_CPP_BIN", "~/safeaid_ai/stt/whisper.cpp/build/bin/whisper-cli"
+    "OGTECH_WHISPER_CPP_BIN", "~/ogtech_ai/stt/whisper.cpp/build/bin/whisper-cli"
 ))
 # small 이 아니라 base 입니다. 1,494 ms vs 3,468 ms `[실측]` 이고 경로 B 예산이
 # 2.0초입니다. 모델 확정은 미결 #8 — 21문장 벤치가 닫습니다.
 WHISPER_CPP_MODEL = _p(os.environ.get(
-    "SAFEAID_WHISPER_CPP_MODEL", "~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin"
+    "OGTECH_WHISPER_CPP_MODEL", "~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin"
 ))
 WHISPER_CPP_THREADS = 6      # 4 -> 6 은 -9% `[실측]`. nproc 6 이 상한
 WHISPER_CPP_LANG = "ko"
 
-# docs/00_동결_결정.md §5에서 동결된 플래그입니다. 튜닝 손잡이가 아닙니다.
+# docs/00_frozen_decisions.md §5에서 동결된 플래그입니다. 튜닝 손잡이가 아닙니다.
 #   -ac 450  30초 멜 윈도 패딩이 지연의 81%. 16,933 -> 1,494 ms `[실측]`
 #            300 으로 내리면 환각과 12.6초 폭주 `[실측]`
 #   -bo 1 -bs 1  beam 은 +33% 지연에 출력 변화 0 `[실측]`
@@ -83,11 +83,11 @@ WHISPER_CPP_LANG = "ko"
 # -ng(GPU 미사용)는 설정이 아니라 고정이므로 engines.py 안에 박아 둡니다.
 #
 # VAD 모델은 whisper.cpp 본체와 따로 내려받습니다.
-#   cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
+#   cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
 # 파일이 없으면 engines.py 가 --vad 를 자동으로 빼고 경고합니다(런타임 보호).
 WHISPER_VAD_MODEL = _p(os.environ.get(
-    "SAFEAID_WHISPER_VAD_MODEL",
-    "~/safeaid_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin",
+    "OGTECH_WHISPER_VAD_MODEL",
+    "~/ogtech_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin",
 ))
 WHISPER_CPP_FLAGS = [
     "-ac", "450", "-bo", "1", "-bs", "1", "-nf",
@@ -125,7 +125,7 @@ WHISPER_CPP_PROMPT = (
 # --- 2안: sherpa-onnx 한국어 zipformer (오프라인) ---------------
 # 압축을 푼 뒤 실제 파일명을 확인해서 맞추세요. epoch/avg 숫자가 다를 수 있습니다.
 SHERPA_DIR = _p(os.environ.get(
-    "SAFEAID_SHERPA_DIR", "~/safeaid_ai/stt/sherpa-onnx-zipformer-korean-2024-06-24"
+    "OGTECH_SHERPA_DIR", "~/ogtech_ai/stt/sherpa-onnx-zipformer-korean-2024-06-24"
 ))
 SHERPA_ENCODER = "encoder-epoch-99-avg-1.int8.onnx"
 SHERPA_DECODER = "decoder-epoch-99-avg-1.onnx"
@@ -151,7 +151,7 @@ ESPEAK_SPEED = 150       # 130~170. 야외에서는 느린 쪽이 알아듣기 �
 
 # --- 2안: piper ------------------------------------------------
 PIPER_BIN = "piper"
-PIPER_MODEL = _p(os.environ.get("SAFEAID_PIPER_MODEL", "~/safeaid_ai/tts/piper/ko.onnx"))
+PIPER_MODEL = _p(os.environ.get("OGTECH_PIPER_MODEL", "~/ogtech_ai/tts/piper/ko.onnx"))
 
 # --- 3안: MeloTTS-Korean ---------------------------------------
 MELO_LANGUAGE = "KR"
@@ -176,8 +176,8 @@ TTS_MAX_GAIN = 4.0
 # 5. LLM (경로 A 에서만 사용)
 #    llama-server 직결입니다. 제품의 backend(8765) 가 아닙니다.
 # =============================================================
-LLM_URL = os.environ.get("SAFEAID_LLM_URL", "http://127.0.0.1:8080/v1/chat/completions")
-LLM_MODEL = os.environ.get("SAFEAID_LLM_MODEL", "qwen2.5-1.5b-instruct")
+LLM_URL = os.environ.get("OGTECH_LLM_URL", "http://127.0.0.1:8080/v1/chat/completions")
+LLM_MODEL = os.environ.get("OGTECH_LLM_MODEL", "qwen2.5-1.5b-instruct")
 LLM_CLASSIFY_TIMEOUT_S = 2.0
 
 SCENARIO_IDS = [
@@ -185,7 +185,7 @@ SCENARIO_IDS = [
     "food", "sleep_safety", "injury", "wildlife", "gear", "refuse", "unknown",
 ]
 CLASSIFIER_SYSTEM = (
-    "사용자 발화를 SafeAid 시나리오 하나로만 분류하세요. "
+    "사용자 발화를 OGTECH 시나리오 하나로만 분류하세요. "
     "lost 길 잃음, route 항법, daylight 일조, weather 현장 기상, shelter 야영지, "
     "warmth 추위, water 물, food 식량, sleep_safety 수면 중 연소·CO, injury 부상, "
     "wildlife 야생동물, gear 장비, refuse 식용·진단·약물 금지, unknown 불명입니다. "
@@ -194,7 +194,7 @@ CLASSIFIER_SYSTEM = (
 CLASSIFIER_RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
-        "name": "safeaid_scenario",
+        "name": "ogtech_scenario",
         "strict": True,
         "schema": {
             "type": "object",
@@ -205,15 +205,15 @@ CLASSIFIER_RESPONSE_FORMAT = {
     },
 }
 
-MAP_API_URL = os.environ.get("SAFEAID_MAP_URL", "http://127.0.0.1:8790")
+MAP_API_URL = os.environ.get("OGTECH_MAP_URL", "http://127.0.0.1:8790")
 MAP_API_TIMEOUT_S = 2.0
 PIPELINE_LOCK_PATH = Path(
-    os.environ.get("SAFEAID_PIPELINE_LOCK", str(RESULT_DIR / "audio_pipeline.lock"))
+    os.environ.get("OGTECH_PIPELINE_LOCK", str(RESULT_DIR / "audio_pipeline.lock"))
 )
 PIPELINE_LOCK_TIMEOUT_S = 30.0
 
 # =============================================================
-# 6. 예산 (docs/00_동결_결정.md §2·§4)
+# 6. 예산 (docs/00_frozen_decisions.md §2·§4)
 # =============================================================
 BUDGET_PATH_B_S = 2.0    # 경로 B: 키워드 게이트 -> 고정 카드 -> TTS
 BUDGET_PATH_A_S = 3.5    # 경로 A: 라벨 분류 -> 검수 카드 -> TTS

@@ -121,7 +121,7 @@ LLM은 판단 주체가 아니라 **정해진 계약 안에서 텍스트를 다�
 
 > `[정합화 주석]` (2026-08-21) — **현재 코드에 구현된 것은 1번뿐입니다.**
 > 2·3번은 설계 목표로 남아 있고 구현되지 않았습니다. 문장 생성은 LLM이 아니라
-> `scripts/safeaid_core.py`의 `CardRenderer`가 검수 카드 문장과 장치 계산값 템플릿으로 만듭니다.
+> `scripts/ogtech_core.py`의 `CardRenderer`가 검수 카드 문장과 장치 계산값 템플릿으로 만듭니다.
 > 자세한 현황은 저장소 최상위 `README.md`의 "LLM이 실제로 하는 일" 표를 보세요.
 
 허용 `scenario_id` (14개):
@@ -199,8 +199,8 @@ Xavier 실측 **prefill 413 tok/s**입니다. 프롬프트 토큰이 곧 지연�
 
 ### §5 STT 실행 구성
 
-whisper.cpp + **CPU 백엔드**입니다. 근거·원시 데이터는 `01_본문.md`, `measurements.csv`,
-`03_부록_원시로그.md`에 있습니다.
+whisper.cpp + **CPU 백엔드**입니다. 근거·원시 데이터는 `01_main.md`, `measurements.csv`,
+`03_appendix_raw_log.md`에 있습니다.
 
 ```
 -ng -ac 450 -bo 1 -bs 1 -nf -t 6 -l ko -nt
@@ -220,8 +220,8 @@ whisper.cpp + **CPU 백엔드**입니다. 근거·원시 데이터는 `01_본문
 > `measurements.csv`의 `base_cpu_vad` 행이 **"최종 선정"**, `decision_matrix.csv`의 같은 구성이
 > **"선정 — 최댓값 기준으로 예산을 통과한 유일한 구성"**입니다.
 > 따라서 **현재 동결 플래그는 위 목록 + `--vad -vm <ggml-silero-v5.1.2.bin>`** 입니다.
-> 재현 명령은 `02_부록_재현절차.md`에 있습니다.
-> 남은 이견: `01_본문.md` §6.3이 후보 B(`-ac 450 -nf`, VAD 없음)를 병기하며 **E12(3초 녹음 재측정)** 결과에
+> 재현 명령은 `02_appendix_reproduction.md`에 있습니다.
+> 남은 이견: `01_main.md` §6.3이 후보 B(`-ac 450 -nf`, VAD 없음)를 병기하며 **E12(3초 녹음 재측정)** 결과에
 > 따라 뒤집힐 수 있다고 적었습니다. **E12는 아직 미측정**이고, 그 조건이 충족되지 않았으므로 선정은 A로 유지됩니다.
 
 ### §5 초기 프롬프트 계약
@@ -307,7 +307,7 @@ TTS  -> CPU
 | 3 | Jetson SC7 딥슬립 복귀 시간 vs 콜드 부팅 | W1 |
 | 4 | HDMI + USB 능동 연장 케이블 길이·신호 무결성 | W2 |
 | 5 | 배터리 4S5P(360 Wh) vs 시연용 4S3P(216 Wh) | W2 |
-| ~~6~~ | ~~제품 표시명~~ — **2026-08-20 확정.** 팀 `OGTECH` / 조직 `2026-ESCW-OGTECH` / 저장소 `OGTECH-*` / 제품 `SafeAid Kit` | 완료 | *(정합화 주석: 조직은 이후 `2026-ESW-OGTECH`로 개명됨)*
+| ~~6~~ | ~~제품 표시명~~ — **2026-08-20 확정.** 팀 `OGTECH` / 조직 `2026-ESCW-OGTECH` / 저장소 `OGTECH-*` / 제품 `OGTECH Kit` | 완료 | *(정합화 주석: 조직은 이후 `2026-ESW-OGTECH`로 개명됨)*
 | 7 | **음성 입출력 최종 선택** — USB(Adafruit 3367/3369) vs I2S(INMP441/MAX98357A) | W2 |
 | 8 | **STT 모델·VAD 확정** — base vs small, VAD 사용 여부.<br>플래그(`-ng -ac 450 -bo 1 -bs 1 -nf`)와 CPU 실행은 **확정**됐습니다(§5) | **08-06** |
 | 9 | **키워드 게이트 다중 매칭 규칙** — `config/keyword_rules.yaml` 우선순위 설계 | **08-06** |
@@ -319,6 +319,6 @@ TTS  -> CPU
 > `[정합화 주석]` (2026-08-21)
 > - **#8의 VAD 부분은 닫혔습니다.** `measurements.csv` P5가 `--vad -vm silero-v5.1.2` 구성을 최종 선정했습니다.
 >   **모델(base vs small)은 base로 유지**되며, 21문장 벤치는 아직 실측되지 않았습니다.
-> - **#9는 구현되었습니다.** `config/keyword_rules.yaml` + `scripts/safeaid_core.py`의 `RuleRouter`가
+> - **#9는 구현되었습니다.** `config/keyword_rules.yaml` + `scripts/ogtech_core.py`의 `RuleRouter`가
 >   위 §5 다중 매칭 우선순위를 그대로 따릅니다.
 > - **#2는 여전히 열려 있습니다.** 코드 기본값은 `melotts → piper → espeak` 순차 폴백입니다(`config.py`).

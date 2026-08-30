@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SafeAid demo, one shot:  record N seconds -> STT -> TTS -> speaker.
+# OGTECH demo, one shot:  record N seconds -> STT -> TTS -> speaker.
 #
 # This is 01_record.sh + 03_echo.sh + 02_play.sh collapsed into one command.
 # Mic AND speaker stay plugged in at the same time -- they are two different
@@ -13,7 +13,7 @@
 #   bash 06_demo.sh 4 plughw:CARD=Device,DEV=0 plughw:CARD=UACDemoV10,DEV=0
 #
 #   WHISPER_PROMPT_FILE=stt_prompt_s.txt bash 06_demo.sh 4    # short prompt
-#   SAFEAID_STT_MODEL=~/safeaid_ai/stt/whisper.cpp/models/ggml-small.bin \
+#   OGTECH_STT_MODEL=~/ogtech_ai/stt/whisper.cpp/models/ggml-small.bin \
 #     bash 06_demo.sh 4                                       # small instead of base
 #
 # --say speaks a fixed sentence instead of what was heard. That is the 경로 B
@@ -56,25 +56,25 @@ done
 SEC="${SEC:-4}"
 
 ESPEAK_SPEED="${ESPEAK_SPEED:-140}"
-BUDGET_MS=2000          # 경로 B budget, ../docs/00_동결_결정.md §4
+BUDGET_MS=2000          # 경로 B budget, ../docs/00_frozen_decisions.md §4
 
 # ---- settings (file, not env -- survives the next login) -----------
 # shellcheck source=stt_prompt.sh
 . "${HERE}/stt_prompt.sh"
 
-WHISPER_BIN="${SAFEAID_STT_BIN}"
-WHISPER_MODEL="${SAFEAID_STT_MODEL}"
+WHISPER_BIN="${OGTECH_STT_BIN}"
+WHISPER_MODEL="${OGTECH_STT_MODEL}"
 
 # WHISPER_PROMPT (env) wins over the file. '+set' not ':-' on purpose:
 # WHISPER_PROMPT="" must mean "no prompt", not "fall back to the file".
 PROMPT=""
 if [ "${USE_PROMPT}" = "1" ]; then
-  PFILE="$(safeaid_prompt_file)"
+  PFILE="$(ogtech_prompt_file)"
   if [ "${WHISPER_PROMPT+set}" = "set" ]; then
     PROMPT="${WHISPER_PROMPT}"
     PFILE="(env WHISPER_PROMPT)"
   else
-    PROMPT="$(safeaid_read_prompt "${PFILE}")" || {
+    PROMPT="$(ogtech_read_prompt "${PFILE}")" || {
       echo "FAIL: prompt file not found: ${PFILE}"
       echo "  put stt_prompt.txt next to this script, or use --no-prompt"
       exit 1
@@ -128,13 +128,13 @@ if [ ! -x "${WHISPER_BIN}" ]; then
     echo "FAIL: whisper.cpp binary not found:"
     echo "  ${WHISPER_BIN}"
     echo "  ${ALT}"
-    echo "  build it (02_설치_A_to_Z.md step 2) or set SAFEAID_STT_BIN"
+    echo "  build it (02_install_a_to_z.md step 2) or set OGTECH_STT_BIN"
     exit 1
   fi
 fi
 [ -f "${WHISPER_MODEL}" ] || {
   echo "FAIL: model not found: ${WHISPER_MODEL}"
-  echo "  cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-ggml-model.sh base"
+  echo "  cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-ggml-model.sh base"
   exit 1
 }
 command -v espeak-ng >/dev/null 2>&1 || { echo "FAIL: sudo apt install -y espeak-ng"; exit 1; }
@@ -154,10 +154,10 @@ TXT="${RES}/demo.txt"
 echo "------------------------------------------------------------"
 echo "mic    : ${MIC_DEV}"
 echo "spk    : ${SPK_DEV}"
-echo "model  : $(basename "${WHISPER_MODEL}")   flags: ${SAFEAID_STT_FLAGS} -t ${SAFEAID_STT_THREADS}"
+echo "model  : $(basename "${WHISPER_MODEL}")   flags: ${OGTECH_STT_FLAGS} -t ${OGTECH_STT_THREADS}"
 if [ -n "${PROMPT}" ]; then
   echo "prompt : $(basename "${PFILE}")"
-  safeaid_prompt_stat "${PROMPT}" | sed 's/^/         /'
+  ogtech_prompt_stat "${PROMPT}" | sed 's/^/         /'
   echo "         ${PROMPT}"
 else
   echo "prompt : none  ${PFILE}"
@@ -205,9 +205,9 @@ PY
 
 # ---- 2. STT -------------------------------------------------------
 t0=$(date +%s%N)
-# shellcheck disable=SC2086  -- SAFEAID_STT_FLAGS is meant to word-split
+# shellcheck disable=SC2086  -- OGTECH_STT_FLAGS is meant to word-split
 RAW="$("${WHISPER_BIN}" -m "${WHISPER_MODEL}" -f "${IN}" \
-        -l ko -t "${SAFEAID_STT_THREADS}" ${SAFEAID_STT_FLAGS} "${PROMPT_ARGS[@]}" \
+        -l ko -t "${OGTECH_STT_THREADS}" ${OGTECH_STT_FLAGS} "${PROMPT_ARGS[@]}" \
         -nt -np 2>"${RES}/_whisper_err.log")"
 RC=$?
 t1=$(date +%s%N)
@@ -216,7 +216,7 @@ t1=$(date +%s%N)
 # blaming the mic for a SIGSEGV sent a whole investigation the wrong way once.
 if [ "${RC}" -ne 0 ]; then
   echo "FAIL: whisper-cli exited ${RC} (it crashed; it did not transcribe)."
-  [ "${RC}" -eq 139 ] && echo "  139 = SIGSEGV, usually CUDA OOM. Keep -ng in SAFEAID_STT_FLAGS."
+  [ "${RC}" -eq 139 ] && echo "  139 = SIGSEGV, usually CUDA OOM. Keep -ng in OGTECH_STT_FLAGS."
   tail -n 5 "${RES}/_whisper_err.log" | sed 's/^/    /'
   exit 1
 fi
@@ -245,7 +245,7 @@ MS_TTS=$(( (t3 - t2) / 1000000 ))
 
 # ---- 4. play ------------------------------------------------------
 # The measured span is 'record end -> first sound', because that is the part
-# the user actually waits through (../docs/00_동결_결정.md §5 측정 기준).
+# the user actually waits through (../docs/00_frozen_decisions.md §5 측정 기준).
 T_FIRST=$(date +%s%N)
 MS_TOTAL=$(( (T_FIRST - T_REC_END) / 1000000 ))
 

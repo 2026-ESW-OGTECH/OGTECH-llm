@@ -2,15 +2,15 @@
 # Shared STT settings. SOURCE this, do not execute it.
 #
 #   . "$(dirname "${BASH_SOURCE[0]}")/stt_prompt.sh"
-#   PROMPT="$(safeaid_read_prompt "$(safeaid_prompt_file)")"
+#   PROMPT="$(ogtech_read_prompt "$(ogtech_prompt_file)")"
 #
 # Why a file and not an env var: an env var lives for exactly one command.
 # Anything that must still be there after the next ssh login lives here.
 # Env vars still win, so a one-off A/B test needs no edit.
 
-SAFEAID_STT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OGTECH_STT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Frozen in ../docs/00_동결_결정.md §5 'STT 실행 구성'. Not tuning knobs:
+# Frozen in ../docs/00_frozen_decisions.md §5 'STT 실행 구성'. Not tuning knobs:
 #   -ng      GPU path SIGSEGVs on this board (cudaMalloc 91 MiB) [실측]
 #   -ac 450  30s mel padding is 81% of the latency. 16,933 -> 1,494 ms [실측]
 #            300 is too low: hallucination + a 12.6 s runaway [실측]
@@ -23,37 +23,37 @@ SAFEAID_STT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # so a single run cannot tell two configs apart.
 #
 # The VAD model is a separate download:
-#   cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
+#   cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
 # Passing --vad without it makes whisper-cli die on model load, so the flags are
 # only added when the file is actually there -- the same rule engines.py uses.
-SAFEAID_STT_VAD_MODEL="${SAFEAID_STT_VAD_MODEL:-${HOME}/safeaid_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin}"
+OGTECH_STT_VAD_MODEL="${OGTECH_STT_VAD_MODEL:-${HOME}/ogtech_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin}"
 
-if [ -z "${SAFEAID_STT_FLAGS:-}" ]; then
-  SAFEAID_STT_FLAGS="-ng -ac 450 -bo 1 -bs 1 -nf"
-  if [ -f "${SAFEAID_STT_VAD_MODEL}" ]; then
-    SAFEAID_STT_FLAGS="${SAFEAID_STT_FLAGS} --vad -vm ${SAFEAID_STT_VAD_MODEL}"
+if [ -z "${OGTECH_STT_FLAGS:-}" ]; then
+  OGTECH_STT_FLAGS="-ng -ac 450 -bo 1 -bs 1 -nf"
+  if [ -f "${OGTECH_STT_VAD_MODEL}" ]; then
+    OGTECH_STT_FLAGS="${OGTECH_STT_FLAGS} --vad -vm ${OGTECH_STT_VAD_MODEL}"
   else
-    echo "WARN: VAD model not found: ${SAFEAID_STT_VAD_MODEL}" >&2
+    echo "WARN: VAD model not found: ${OGTECH_STT_VAD_MODEL}" >&2
     echo "      Running 후보 B (no VAD). 최댓값이 경로 B 예산 2.0초를 넘길 수 있습니다 [실측]." >&2
-    echo "      Fix: cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2" >&2
+    echo "      Fix: cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2" >&2
   fi
 fi
 
 # 4 -> 6 threads is only -9% [실측]; 6 is what nproc gives on MODE_15W_6CORE.
-SAFEAID_STT_THREADS="${SAFEAID_STT_THREADS:-6}"
+OGTECH_STT_THREADS="${OGTECH_STT_THREADS:-6}"
 
 # base, not small: 1,494 ms vs 3,468 ms [실측], and 경로 B has a 2.0 s budget.
 # Model choice is still open question #8 -- the 21-utterance bench decides it.
-# Override for one run:  SAFEAID_STT_MODEL=~/.../ggml-small.bin bash 06_demo.sh
-SAFEAID_STT_MODEL="${SAFEAID_STT_MODEL:-${HOME}/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin}"
-SAFEAID_STT_BIN="${SAFEAID_STT_BIN:-${HOME}/safeaid_ai/stt/whisper.cpp/build/bin/whisper-cli}"
+# Override for one run:  OGTECH_STT_MODEL=~/.../ggml-small.bin bash 06_demo.sh
+OGTECH_STT_MODEL="${OGTECH_STT_MODEL:-${HOME}/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin}"
+OGTECH_STT_BIN="${OGTECH_STT_BIN:-${HOME}/ogtech_ai/stt/whisper.cpp/build/bin/whisper-cli}"
 
 # Which prompt file. Accepts a bare name ('stt_prompt_s.txt'), which is
 # resolved next to this script, or an absolute path.
-safeaid_prompt_file() {
-  local f="${WHISPER_PROMPT_FILE:-${SAFEAID_STT_DIR}/stt_prompt.txt}"
-  if [ ! -f "${f}" ] && [ -f "${SAFEAID_STT_DIR}/${f}" ]; then
-    f="${SAFEAID_STT_DIR}/${f}"
+ogtech_prompt_file() {
+  local f="${WHISPER_PROMPT_FILE:-${OGTECH_STT_DIR}/stt_prompt.txt}"
+  if [ ! -f "${f}" ] && [ -f "${OGTECH_STT_DIR}/${f}" ]; then
+    f="${OGTECH_STT_DIR}/${f}"
   fi
   printf '%s' "${f}"
 }
@@ -63,7 +63,7 @@ safeaid_prompt_file() {
 #   - CR is stripped: this repo is edited on Windows and copied to the Jetson,
 #     and a trailing \r inside --prompt would be passed to the decoder as text
 # Returns non-zero if the file is missing, so callers can fail loudly.
-safeaid_read_prompt() {
+ogtech_read_prompt() {
   [ -f "$1" ] || return 1
   tr -d '\r' < "$1" \
     | sed 's/[[:space:]]*#.*$//' \
@@ -82,7 +82,7 @@ safeaid_read_prompt() {
 #
 # 'wc -m' is not used: it counts bytes when the ssh session has no UTF-8
 # locale, which turns 157 characters into 367 and fires a false alarm.
-safeaid_prompt_stat() {
+ogtech_prompt_stat() {
   printf '%s' "$1" | python3 -c '
 import re, sys
 # .buffer + explicit utf-8: sys.stdin follows the locale, and a session

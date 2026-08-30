@@ -156,7 +156,7 @@ class ObservationLog:
 def _base_report(requested_runs: int, log: ObservationLog) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
-        "tool": "safeaid_hardware_acceptance",
+        "tool": "ogtech_hardware_acceptance",
         "status": "in_progress",
         "pass": False,
         "runs_requested": requested_runs,

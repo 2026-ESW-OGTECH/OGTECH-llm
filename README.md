@@ -1,6 +1,6 @@
 # OGTECH-llm — 온디바이스 음성 파이프라인과 평가 하네스
 
-**SafeAid Kit** (2026 임베디드 소프트웨어 경진대회 자유공모 / 팀 OGTECH) 의 LLM 저장소입니다.
+**OGTECH Kit** (2026 임베디드 소프트웨어 경진대회 자유공모 / 팀 OGTECH) 의 LLM 저장소입니다.
 [조직 개요](https://github.com/2026-ESW-OGTECH) · [다른 저장소 안내](https://github.com/2026-ESW-OGTECH/.github)
 
 ---
@@ -14,13 +14,13 @@ LLM은 판단 주체가 아니라 **정해진 계약 안에서 텍스트만 다�
 
 ### LLM이 실제로 하는 일 — 지금은 분류 하나뿐입니다
 
-설계 계약([`docs/00_동결_결정.md`](Co-LLM/docs/00_동결_결정.md) §4)은 역할 3개를 적어 두었지만,
+설계 계약([`docs/00_frozen_decisions.md`](Co-LLM/docs/00_frozen_decisions.md) §4)은 역할 3개를 적어 두었지만,
 **저장소에 코드로 있는 것은 1번뿐입니다.** 문서와 코드가 갈라지지 않도록 현재 상태를 그대로 적습니다.
 
 | 구분 | 내용 | 코드 근거 |
 |---|---|---|
-| **구현됨 — 14라벨 분류 1개** | 출력은 **enum 라벨 1개**(`scenario_id`, JSON Schema strict, `max_tokens=16`). 재시도 없이 실패하면 `unknown`. 규칙 게이트가 라벨을 못 고른 발화만 여기로 옵니다. **생명 라벨(`lost·daylight·warmth·sleep_safety·injury·refuse`)은 LLM이 내놓아도 채택하지 않고** 고정 카드로 내립니다 | [`scripts/engines.py`](Co-LLM/scripts/engines.py) `classify_scenario()` · [`scripts/safeaid_core.py`](Co-LLM/scripts/safeaid_core.py) `RuleRouter.resolve()` |
-| **문장 생성 — LLM 미사용** | 사용자가 듣는 문장은 **규칙 라우팅 + 검수 카드 템플릿**이 만듭니다. 검수된 고정 문장에, 코드가 계산한 장치값(GPS 정확도·위성 수·트레일 이탈 m·CO ppm·전원 %)만 끼워 넣습니다. 이 경로에 모델은 없습니다 | [`scripts/safeaid_core.py`](Co-LLM/scripts/safeaid_core.py) `CardRenderer.render()` |
+| **구현됨 — 14라벨 분류 1개** | 출력은 **enum 라벨 1개**(`scenario_id`, JSON Schema strict, `max_tokens=16`). 재시도 없이 실패하면 `unknown`. 규칙 게이트가 라벨을 못 고른 발화만 여기로 옵니다. **생명 라벨(`lost·daylight·warmth·sleep_safety·injury·refuse`)은 LLM이 내놓아도 채택하지 않고** 고정 카드로 내립니다 | [`scripts/engines.py`](Co-LLM/scripts/engines.py) `classify_scenario()` · [`scripts/ogtech_core.py`](Co-LLM/scripts/ogtech_core.py) `RuleRouter.resolve()` |
+| **문장 생성 — LLM 미사용** | 사용자가 듣는 문장은 **규칙 라우팅 + 검수 카드 템플릿**이 만듭니다. 검수된 고정 문장에, 코드가 계산한 장치값(GPS 정확도·위성 수·트레일 이탈 m·CO ppm·전원 %)만 끼워 넣습니다. 이 경로에 모델은 없습니다 | [`scripts/ogtech_core.py`](Co-LLM/scripts/ogtech_core.py) `CardRenderer.render()` |
 | **설계 목표(미구현)** | ② 질의 대상 추출(`target` × `ask`) ③ 카드 맞춤 문장 2~4줄(~96 토큰). 계약만 있고 구현이 없습니다 | — |
 
 그래서 **"경로 A = LLM이 카드를 다듬는다"는 아직 문서상의 계약입니다.** 현재 두 경로의 차이는
@@ -37,7 +37,7 @@ Co-LLM/                        ★ 실행 파이프라인과 검증 (이 저장�
 │  ├─ tts_pipeline.py          문장 단위 스트리밍 TTS
 │  ├─ product_assistant.py     카드 선택과 문장 조립
 │  ├─ device_monitor.py        장치 상태 감시
-│  ├─ safeaid_core.py          규칙 라우터 · 검수 카드 문장 조립 (LLM 미사용)
+│  ├─ ogtech_core.py          규칙 라우터 · 검수 카드 문장 조립 (LLM 미사용)
 │  └─ engines.py · voice_loop.py · stt_prompt.txt
 ├─ config/
 │  ├─ survival_cards.json      검수된 고정 카드
@@ -92,21 +92,21 @@ whisper는 입력이 5초든 30초든 인코더를 30초 멜 윈도로 돌립니
 - **`-ac 300` 기각** — 중앙값은 최소지만 환각이 나고 최댓값이 12.6초로 폭주합니다 `[실측]`. 450이 하한선입니다.
 
 **코드 기본 구성이 곧 이 최종 선정 구성입니다.** `Co-LLM/config.py`의 `WHISPER_CPP_FLAGS`와
-`Co-LLM/scripts/stt_prompt.sh`의 `SAFEAID_STT_FLAGS`가 `--vad -vm ggml-silero-v5.1.2.bin`을 포함합니다.
+`Co-LLM/scripts/stt_prompt.sh`의 `OGTECH_STT_FLAGS`가 `--vad -vm ggml-silero-v5.1.2.bin`을 포함합니다.
 VAD 모델(864 KB)은 whisper.cpp 본체와 따로 내려받습니다.
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
+cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
 
 # 경로가 다르면
-SAFEAID_WHISPER_VAD_MODEL=/path/to/ggml-silero-v5.1.2.bin
+OGTECH_WHISPER_VAD_MODEL=/path/to/ggml-silero-v5.1.2.bin
 ```
 
 **모델 파일이 없으면 `--vad`를 자동으로 빼고 경고를 남깁니다** (`engines.py`의 `whisper_flags()`,
 `stt_prompt.sh`의 같은 규칙). 없는 채로 넘기면 whisper-cli가 모델 로드에 실패해 그대로 죽기 때문입니다.
 이때는 위 표의 2행 구성으로 내려가므로 최댓값이 예산을 넘길 수 있습니다.
 
-> 남은 이견 — [`Co-LLM/docs/01_본문.md`](Co-LLM/docs/01_본문.md) §6.3은 2행 구성의 꼬리가
+> 남은 이견 — [`Co-LLM/docs/01_main.md`](Co-LLM/docs/01_main.md) §6.3은 2행 구성의 꼬리가
 > **5초 고정 녹음이라는 측정 하네스의 산물**일 가능성을 열어 두고, E12(3초 녹음 재측정)를 뒤집기 조건으로
 > 걸었습니다. **E12는 아직 미측정**이므로 선정은 VAD 구성으로 유지합니다.
 
@@ -141,14 +141,14 @@ Xavier 실측 prefill이 413 tok/s입니다. **3,300 토큰짜리 프롬프트�
 
 `Co-LLM/eval/run_video_scenario.py`는 지도 엔진과 음성 경로를 함께 도는 통합 검증 하네스라
 두 저장소가 모두 필요합니다. 같은 상위 폴더에 나란히 clone하면 자동으로 찾고,
-다른 곳에 있으면 `SAFEAID_MAP_ROOT`로 지정합니다.
+다른 곳에 있으면 `OGTECH_MAP_ROOT`로 지정합니다.
 
 ```bash
 git clone https://github.com/2026-ESW-OGTECH/OGTECH-llm.git
 git clone https://github.com/2026-ESW-OGTECH/OGTECH-frontend.git
 
 # 경로가 다르면
-SAFEAID_MAP_ROOT=/path/to/OGTECH-frontend/MAP python Co-LLM/eval/run_video_scenario.py
+OGTECH_MAP_ROOT=/path/to/OGTECH-frontend/MAP python Co-LLM/eval/run_video_scenario.py
 ```
 
 ## 검증

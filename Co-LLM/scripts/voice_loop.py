@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config as C          # noqa: E402
 import engines as E         # noqa: E402
-from safeaid_core import CardRenderer, RuleRouter  # noqa: E402
+from ogtech_core import CardRenderer, RuleRouter  # noqa: E402
 
 
 BAR = "-" * 56
@@ -163,7 +163,7 @@ def run_once(args, idx):
     print("[MEM ] MemAvailable %d MB  (변화 %+d MB)" % (mem1, mem1 - mem0))
     if verdict == "OVER":
         big = max(("STT", stt_s), ("LLM", llm_s), ("TTS", tts_s), key=lambda kv: kv[1])
-        print("       가장 큰 단계: %s %.2f s -> 03_STT_후보.md / 04_TTS_후보.md" % big)
+        print("       가장 큰 단계: %s %.2f s -> 03_stt_candidates.md / 04_tts_candidates.md" % big)
 
     return {
         "ts": datetime.now().isoformat(timespec="seconds"),
@@ -208,7 +208,7 @@ def main():
         print("\n중단했습니다.")
     except FileNotFoundError as e:
         print("\n실행 파일을 찾을 수 없습니다: %s" % e)
-        print("02_설치_A_to_Z.md 의 0-3 단계(apt install)를 확인하세요.")
+        print("02_install_a_to_z.md 의 0-3 단계(apt install)를 확인하세요.")
     except RuntimeError as e:
         print("\n%s" % e)
 
@@ -228,7 +228,7 @@ def main():
           % (sum(r["stt_s"] for r in rows) / len(rows),
              sum(r["llm_s"] for r in rows) / len(rows),
              sum(r["tts_s"] for r in rows) / len(rows)))
-    print("\n05_테스트_기록표.md 를 채워서 공유하세요.")
+    print("\n05_test_log.md 를 채워서 공유하세요.")
     return 0
 
 

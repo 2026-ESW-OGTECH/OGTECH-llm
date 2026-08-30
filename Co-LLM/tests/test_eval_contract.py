@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / "eval"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from run_eval import load_jsonl  # noqa: E402
-from safeaid_core import RuleRouter, SCENARIO_IDS  # noqa: E402
+from ogtech_core import RuleRouter, SCENARIO_IDS  # noqa: E402
 
 
 class EvaluationContractTest(unittest.TestCase):

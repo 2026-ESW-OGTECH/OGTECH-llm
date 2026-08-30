@@ -254,7 +254,7 @@ class TtsPipeline:
         destination.parent.mkdir(parents=True, exist_ok=True)
         for index, engine_name in enumerate(self.engine_order):
             temporary_handle = tempfile.NamedTemporaryFile(
-                prefix="safeaid-tts-", suffix=".wav", dir=destination.parent, delete=False
+                prefix="ogtech-tts-", suffix=".wav", dir=destination.parent, delete=False
             )
             temporary_path = Path(temporary_handle.name)
             temporary_handle.close()

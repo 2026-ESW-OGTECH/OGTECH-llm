@@ -114,7 +114,7 @@ STT 엔진:
              1 = 무슨 말인지 모르겠음
 
 Kokoro-82M 한국어 지원 확인 결과:   지원함 / 지원 안 함 / 확인 못 함
-   (04_TTS_후보.md 의 확인 명령 결과를 그대로 붙여 주세요)
+   (04_tts_candidates.md 의 확인 명령 결과를 그대로 붙여 주세요)
 
 Piper 한국어 모델 출처 / 라이선스:
 ```
@@ -126,7 +126,7 @@ Piper 한국어 모델 출처 / 라이선스:
 명령: `python scripts/voice_loop.py --path a --repeat 10`
 
 ```
-llama-server 옵션 (docs/00_동결_결정.md §5 그대로 썼는가):   예 / 아니오 (다르면 내용:            )
+llama-server 옵션 (docs/00_frozen_decisions.md §5 그대로 썼는가):   예 / 아니오 (다르면 내용:            )
 모델:                          qwen2.5-1.5b-instruct-q4_k_m.gguf
 
 웜 런 총지연   최소 /  중앙 /  최대:      s /      s /      s

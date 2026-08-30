@@ -1,0 +1,18 @@
+[Unit]
+Description=OGTECH STM32 물리 음성 버튼 push-to-talk
+After=sound.target ogtech-map.service
+Requires=ogtech-map.service
+
+[Service]
+Type=simple
+User=safeaid
+SupplementaryGroups=audio
+WorkingDirectory=/opt/ogtech/Co-LLM
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/ogtech/audio.env
+ExecStart=/opt/ogtech/Co-LLM/.venv/bin/python /opt/ogtech/Co-LLM/scripts/physical_voice.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -4,10 +4,10 @@
 #
 #   bash 04_record_set.sh                      # record the 6 utterances first
 #
-#   bash 05_bench.sh base_cpu   ~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin  -ng -ac 600 -bo 1 -bs 1
-#   bash 05_bench.sh small_cpu  ~/safeaid_ai/stt/whisper.cpp/models/ggml-small.bin -ng -ac 600 -bo 1 -bs 1
-#   bash 05_bench.sh base_gpu   ~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin      -ac 600 -bo 1 -bs 1
-#   bash 05_bench.sh small_gpu  ~/safeaid_ai/stt/whisper.cpp/models/ggml-small.bin     -ac 600 -bo 1 -bs 1
+#   bash 05_bench.sh base_cpu   ~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin  -ng -ac 600 -bo 1 -bs 1
+#   bash 05_bench.sh small_cpu  ~/ogtech_ai/stt/whisper.cpp/models/ggml-small.bin -ng -ac 600 -bo 1 -bs 1
+#   bash 05_bench.sh base_gpu   ~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin      -ac 600 -bo 1 -bs 1
+#   bash 05_bench.sh small_gpu  ~/ogtech_ai/stt/whisper.cpp/models/ggml-small.bin     -ac 600 -bo 1 -bs 1
 #
 # CLOCKS=1 applies the burst clock policy (jetson_clocks on -> run -> restore):
 #   CLOCKS=1 bash 05_bench.sh base_cpu_clk ~/.../ggml-base.bin -ng -ac 600 -bo 1 -bs 1
@@ -43,14 +43,14 @@ WHISPER_PROMPT="${WHISPER_PROMPT:-}"
 if [ -z "${WHISPER_PROMPT}" ] && [ -n "${WHISPER_PROMPT_FILE:-}" ]; then
   # shellcheck source=stt_prompt.sh
   . "${HERE}/stt_prompt.sh"
-  WHISPER_PROMPT="$(safeaid_read_prompt "$(safeaid_prompt_file)")" || {
+  WHISPER_PROMPT="$(ogtech_read_prompt "$(ogtech_prompt_file)")" || {
     echo "FAIL: prompt file not found: ${WHISPER_PROMPT_FILE}"; exit 1; }
 fi
 
 PROMPT_ARGS=()
 [ -n "${WHISPER_PROMPT}" ] && PROMPT_ARGS=(--prompt "${WHISPER_PROMPT}")
 
-BIN="${WHISPER_BIN:-${HOME}/safeaid_ai/stt/whisper.cpp/build/bin/whisper-cli}"
+BIN="${WHISPER_BIN:-${HOME}/ogtech_ai/stt/whisper.cpp/build/bin/whisper-cli}"
 [ -x "${BIN}" ] || BIN="$(dirname "${BIN}")/main"
 IDLE_SEC="${IDLE_SEC:-15}"
 CLOCKS="${CLOCKS:-0}"

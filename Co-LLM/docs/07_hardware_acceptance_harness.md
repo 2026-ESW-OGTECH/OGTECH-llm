@@ -28,18 +28,18 @@ onset은 같은 monotonic clock 기준이어야 한다.
 ```bash
 cd OGTECH-llm/Co-LLM
 python3 -B eval/run_hardware_acceptance.py \
-  --events /var/local/safeaid/jetson_voice_20.jsonl \
+  --events /var/local/ogtech/jetson_voice_20.jsonl \
   --runs 20 \
-  --output /var/local/safeaid/evidence/jetson_voice_20.json
+  --output /var/local/ogtech/evidence/jetson_voice_20.json
 ```
 
 입력 파일이 JSON이면 다음처럼 `{"runs": [...]}` 문서를 읽는다.
 
 ```bash
 python3 -B eval/run_hardware_acceptance.py \
-  --input /var/local/safeaid/jetson_voice_snapshot.json \
+  --input /var/local/ogtech/jetson_voice_snapshot.json \
   --runs 20 \
-  --output /var/local/safeaid/evidence/jetson_voice_20.json
+  --output /var/local/ogtech/evidence/jetson_voice_20.json
 ```
 
 JSONL은 다음 이벤트 이름을 사용한다.

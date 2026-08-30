@@ -15,7 +15,7 @@
 | 방수 | **IP65 이상 필수.** 비 맞는 게 예외가 아니라 기본 조건 |
 
 **설계에 미치는 영향 3가지**
-1. **케이스가 밀폐되면 Xavier NX가 열로 스로틀링됩니다.** → [07 §4](07_하드웨어_타당성_판정.md)
+1. **케이스가 밀폐되면 Xavier NX가 열로 스로틀링됩니다.** → [07 §4](07_hardware_feasibility.md)
 2. **화면은 대부분 꺼져 있습니다.** 음성이 1차 출력, 화면이 2차입니다. 기존 UI 전제와 반대입니다.
 3. **연장 케이블 = 신호 무결성 문제.** LVDS/eDP는 장거리 안 갑니다. HDMI 또는 USB-C DP Alt Mode + 능동 케이블로 가야 합니다. `[미검증 — 실측 필요]`
 
@@ -32,8 +32,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 모듈 | **Seeed Grove GPS (Air530)** — 6계 GNSS(GPS/BeiDou/GLONASS/Galileo/QZSS/SBAS), UART/NMEA, u.FL 외장 안테나 동봉.<br>※ 초안의 NEO-M9N → MAX-M10S → Air530으로 2회 변경. 최종 근거는 **[10 §3.1](10_부품_선정_BOM.md)** |
-| 인터페이스 | UART → **STM32** (Jetson 아님. 이유는 [06](06_전력_예산_배터리.md)) |
+| 모듈 | **Seeed Grove GPS (Air530)** — 6계 GNSS(GPS/BeiDou/GLONASS/Galileo/QZSS/SBAS), UART/NMEA, u.FL 외장 안테나 동봉.<br>※ 초안의 NEO-M9N → MAX-M10S → Air530으로 2회 변경. 최종 근거는 **[10 §3.1](10_parts_selection_bom.md)** |
+| 인터페이스 | UART → **STM32** (Jetson 아님. 이유는 [06](06_power_budget_battery.md)) |
 | 실측 정확도 | 개활지 2~5 m / **밀림 캐노피 아래 1~12 m** `[출처]` |
 | 최대 오차원 | **다중경로(multipath)** — 숲에서 가장 큰 오차원 |
 
@@ -70,7 +70,7 @@
 | 종류 | 저장 시점 | 용도 |
 |---|---|---|
 | **베이스캠프** | 사용자 지정 | 귀환 기준점 |
-| **텐트 앵커** | 취침 전 원터치 | 야간 복귀 ([03 D](03_초보자_위험_분류표.md)) |
+| **텐트 앵커** | 취침 전 원터치 | 야간 복귀 ([03 D](03_beginner_risk_taxonomy.md)) |
 | **수원** | 사용자 지정 | 재보급 계획 |
 | **탈출점(bail-out)** | 루트 로드 시 자동 | 회귀 판단 계산의 목적지 |
 | **자동 위치 로그** | **자동, 60초 간격** | Largay 유형 차단 |
@@ -93,7 +93,7 @@
 
 ## 3.2 수면 중 안전 — **"딱히 생각이 안 난다"에 대한 답**
 
-[03 D](03_초보자_위험_분류표.md)에 근거가 있습니다. 여기서는 구현만 적습니다.
+[03 D](03_beginner_risk_taxonomy.md)에 근거가 있습니다. 여기서는 구현만 적습니다.
 
 | # | 기능 | 부품 | 원가 | 구현 난이도 | 근거 |
 |---|---|---|---|---|---|
@@ -134,7 +134,7 @@
 
 > **CO 경보는 Jetson 없이 STM32 단독으로 완결되어야 합니다.**
 > 부팅에 10초가 걸리는 경로에 사람 목숨을 걸면 안 됩니다.
-> 이건 [06](06_전력_예산_배터리.md)의 전력 설계와도 정확히 일치합니다. **드물게 나오는 win-win입니다.**
+> 이건 [06](06_power_budget_battery.md)의 전력 설계와도 정확히 일치합니다. **드물게 나오는 win-win입니다.**
 
 ### 판정
 **가능하고, 이 작품에서 가장 설득력 있는 기능군입니다.**
@@ -208,7 +208,7 @@
 ### 요구
 마이크 → LLM 연산 → 귀에 연결된 스피커로 답. Qwen2.5 1.5B 유지 가능한지, 하네스 어떻게 할지.
 
-→ **[05 LLM 하네스 재설계](05_LLM_하네스_재설계.md) 전체가 이 절의 답입니다.**
+→ **[05 LLM 하네스 재설계](05_llm_harness_redesign.md) 전체가 이 절의 답입니다.**
 
 여기서는 결론만:
 
@@ -223,7 +223,7 @@
 
 ## 3.5 배터리
 
-→ **[06 전력 예산](06_전력_예산_배터리.md) 전체가 이 절의 답입니다.**
+→ **[06 전력 예산](06_power_budget_battery.md) 전체가 이 절의 답입니다.**
 
 여기서는 결론만:
 
@@ -307,7 +307,7 @@
 | **9/1 18:00** | **내부 동결** | |
 
 **W3의 TTS가 최대 위험 구간입니다.** 한국어 오프라인 음성 확보가 안 되면 3.4가 통째로 무너집니다.
-→ **W1에 TTS 스파이크를 먼저 돌리세요.** ([05 §6](05_LLM_하네스_재설계.md))
+→ **W1에 TTS 스파이크를 먼저 돌리세요.** ([05 §6](05_llm_harness_redesign.md))
 
 ---
 
@@ -317,4 +317,4 @@
 - [A Review of the Carbon Monoxide Alarm and Detection Thresholds (NFPA Research Foundation)](https://www.nfpa.org/education-and-research/research/fire-protection-research-foundation/projects-and-reports/a-review-of-the-carbon-monoxide-alarm-and-detection-thresholds)
 - [Solar Calculator — calculation details (NOAA GML)](https://gml.noaa.gov/grad/solcalc/calcdetails.html)
 - [Zambretti Forecaster 정확도 (Hackaday.io)](https://hackaday.io/project/165061-solar-powered-wifi-weather-station-v20/log/163530-included-zambretti-forecaster-in-software)
-- 그 외 사례·통계 출처는 [02 사례집](02_오지탐험_실제_사례집.md) 하단 참조
+- 그 외 사례·통계 출처는 [02 사례집](02_wilderness_case_studies.md) 하단 참조

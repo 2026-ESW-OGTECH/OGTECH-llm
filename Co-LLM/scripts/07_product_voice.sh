@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SafeAid 제품 음성 1회 실행. 인자는 product_voice.py에 그대로 전달합니다.
+# OGTECH 제품 음성 1회 실행. 인자는 product_voice.py에 그대로 전달합니다.
 set -eu
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

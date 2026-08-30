@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SafeAid 선제 음성 경보 데몬. 인자는 device_monitor.py에 그대로 전달합니다.
+# OGTECH 선제 음성 경보 데몬. 인자는 device_monitor.py에 그대로 전달합니다.
 set -eu
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

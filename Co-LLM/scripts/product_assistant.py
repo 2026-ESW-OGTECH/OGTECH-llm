@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SafeAid 제품용 텍스트 라우팅과 로컬 지도 API 연결."""
+"""OGTECH 제품용 텍스트 라우팅과 로컬 지도 API 연결."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 from uuid import uuid4
 
-from safeaid_core import CardRenderer, RouteDecision, RuleRouter, SCENARIO_IDS
+from ogtech_core import CardRenderer, RouteDecision, RuleRouter, SCENARIO_IDS
 
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}

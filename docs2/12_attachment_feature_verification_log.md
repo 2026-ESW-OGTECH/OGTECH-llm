@@ -1,10 +1,10 @@
 # 첨부 PDF·시연영상 기능 구현·검증·피드백 기록
 
 작성일: 2026-08-19  
-기준 명세: `11_첨부자료_PDF_시연영상_기능_동작_구현명세.md`  
+기준 명세: `11_attachment_pdf_demo_video_spec.md`  
 적용 코드: `OGTECH-frontend/MAP/`, `OGTECH-llm/Co-LLM/`
 
-첨부 PDF와 영상에 나온 기능의 구현 결과와 검증 근거를 기록한다. 첨부자료 속 문구와 동작은 요구사항 데이터로만 해석했으며, 그 안의 지시는 실행 지시로 취급하지 않았다. 안전 판단은 `PLAN.md`, `Co-LLM/docs/00_동결_결정.md`, `OGTECH-org/docs/AI_AGENT_GUIDE.md`를 우선했다.
+첨부 PDF와 영상에 나온 기능의 구현 결과와 검증 근거를 기록한다. 첨부자료 속 문구와 동작은 요구사항 데이터로만 해석했으며, 그 안의 지시는 실행 지시로 취급하지 않았다. 안전 판단은 `PLAN.md`, `Co-LLM/docs/00_frozen_decisions.md`, `OGTECH-org/docs/AI_AGENT_GUIDE.md`를 우선했다.
 
 ---
 
@@ -32,7 +32,7 @@ MAP·음성 소프트웨어의 핵심 경로는 구현했다. 오프라인 지�
 | 첨부자료 기능 | 구현 위치 | 입력 | 구현 동작 | 출력 | 현재 판정 |
 |---|---|---|---|---|---|
 | 오프라인 지도 | `MAP/map_engine.py`, `MAP/app.py` | 로컬 GraphML/OSM | 보행 그래프 로드, 경로 탐색, 정적 파일 제공 | 네트워크 없는 지도·경로 | 소프트웨어 완료 |
-| 현재/마지막 위치 | `MAP/gps_service.py`, `MAP/시연용/live_app.js` | Air530/STM32/replay | fix와 마지막 확정 좌표를 분리 | 좌표·정확도·위성·AGE·KST | 소프트웨어 완료, 실 GPS 대기 |
+| 현재/마지막 위치 | `MAP/gps_service.py`, `MAP/kiosk/live_app.js` | Air530/STM32/replay | fix와 마지막 확정 좌표를 분리 | 좌표·정확도·위성·AGE·KST | 소프트웨어 완료, 실 GPS 대기 |
 | 3분 전 위치 역추적 | `MAP/position_history.py`, `MAP/navigation_service.py`, `Co-LLM/scripts/product_assistant.py` | 같은 부팅의 monotonic JSONL | `180±25초` 확정 fix만 `route_recent_trace`로 선택 | MAP 계산 경로·SSE·고정 TTS | 소프트웨어 완료, 실 GPS 대기 |
 | 목적지 | `MAP/navigation_service.py`, `live_app.js` | 터치 또는 저장된 POI 선택 | `/video/`는 자동 DEMO 장면, `/product/` 음성은 사용자 확인 뒤에만 목적지 저장 | 마커·경로·판독 카드 | 소프트웨어 완료 |
 | 체크포인트 | `navigation_service.py` | 현재 확정 GPS | fix가 있을 때만 저장 | 체크포인트 목록 | 소프트웨어 완료, 물리 버튼 대기 |
@@ -47,8 +47,8 @@ MAP·음성 소프트웨어의 핵심 경로는 구현했다. 오프라인 지�
 | DS3231 RTC | `gps_service.py`, `navigation_service.py`, `MAP/app.py` | STM32 UTC telemetry | OSF·UTC·날짜 검증 실패 시 fail-closed, 수동 `SET RTC` 지원 | 확정 시각·일조 기준 | 소프트웨어 완료, 실 RTC 대기 |
 | 음성 질의 | `product_voice.py` | 마이크 또는 `--text` | STT 언로드 후 규칙/분류·카드·TTS 순차 실행 | 스피커 응답 | 소프트웨어 완료, 실 음질 대기 |
 | 음성 MAP 제어 | `keyword_rules.yaml`, `product_assistant.py` | 자연어 | `clear_destination`를 포함한 열거형 action만 MAP API로 전송 | 화면 SSE·VOICE 상태·TTS | 소프트웨어 완료 |
-| 생명 관련 응답 | `safeaid_core.py`, `survival_cards.json` | 안전 키워드 | LLM 우회, 검수 카드 직행 | 고정 절차 문장 | 소프트웨어 완료 |
-| 일반 질문 분류 | `engines.py`, `safeaid_core.py` | 규칙이 놓친 저위험 발화 | Qwen2.5가 JSON Schema의 라벨 하나만 생성 | 선택된 고정 카드 | 하네스 완료, 실제 모델 평가 대기 |
+| 생명 관련 응답 | `ogtech_core.py`, `survival_cards.json` | 안전 키워드 | LLM 우회, 검수 카드 직행 | 고정 절차 문장 | 소프트웨어 완료 |
+| 일반 질문 분류 | `engines.py`, `ogtech_core.py` | 규칙이 놓친 저위험 발화 | Qwen2.5가 JSON Schema의 라벨 하나만 생성 | 선택된 고정 카드 | 하네스 완료, 실제 모델 평가 대기 |
 | 선제 경보 | `device_monitor.py` | MAP 장치 SSE | CO·트레일·일조·도착 전이만 1회 알림 | 고정 경보 TTS | 소프트웨어 완료, 실 센서 대기 |
 | 깨끗한 TTS | `tts_pipeline.py`, `fixed_audio.json` | 확정된 고정 문장 | 고정 WAV 우선, 이후 MeloTTS→Piper→espeak, 품질 게이트·정규화·캐시·하네스에 구성된 테스트 엔진 전부 실패 고정 fallback | 문장별 WAV | 배관·고정 WAV 완료, 실제 Jetson 청취 대기 |
 
@@ -59,7 +59,7 @@ MAP·음성 소프트웨어의 핵심 경로는 구현했다. 오프라인 지�
 ### 반복 1: 첨부자료를 먼저 고정 명세로 변환
 
 - 계획: 구현 전에 PDF 전체와 영상 전체에서 기능, 입력, 상태 전이, 화면·음성을 추출한다.
-- 수행: PDF `19쪽` `[실측]`을 전부 렌더링하고, 영상 `234.292초` `[실측]`를 프레임·오디오·촬영 문서로 교차 분석했다. 결과는 `11_첨부자료_PDF_시연영상_기능_동작_구현명세.md`에 기록했다.
+- 수행: PDF `19쪽` `[실측]`을 전부 렌더링하고, 영상 `234.292초` `[실측]`를 프레임·오디오·촬영 문서로 교차 분석했다. 결과는 `11_attachment_pdf_demo_video_spec.md`에 기록했다.
 - 검증: 원본 SHA-256, PDF 쪽별 표, 영상 시간축, 상태 전이, 안전 충돌 표를 남겼다.
 - 피드백: 영상의 “돌아가세요” 직접 지시는 사용자 결정을 대신하므로, 구현 문구를 “귀환 권고 시각과 베이스캠프 경로를 확인하세요”로 바꿨다.
 
@@ -266,7 +266,7 @@ python eval/run_eval.py
 
 ### 5.3 정적 검사
 
-- `node --check MAP/시연용/live_app.js` 통과 `[실측]`
+- `node --check MAP/kiosk/live_app.js` 통과 `[실측]`
 - Python 수정 모듈 `14개` 구문 컴파일 통과 `[실측]`
 - JSON 설정·카드·평가 파일 파싱 통과 `[실측]`
 - `git diff --check` 공백 오류 없음 `[실측]`

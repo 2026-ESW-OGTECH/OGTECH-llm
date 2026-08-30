@@ -1,4 +1,4 @@
-# Co-LLM — SafeAid 제품 음성 경로와 오디오 벤치
+# Co-LLM — OGTECH 제품 음성 경로와 오디오 벤치
 
 이 폴더에는 세 경로가 함께 있다.
 
@@ -132,21 +132,21 @@ bash scripts/07_product_voice.sh --tts-order espeak
 ## Jetson ALSA·systemd 설치
 
 기본 ALSA 이름은 Adafruit 3367 마이크 `Device`, Adafruit 3369 스피커 `UACDemoV10`이다. 카드 번호는
-부팅마다 바뀌므로 쓰지 않는다. `/etc/safeaid/audio.env`에 `jetson/audio.env.example`을 복사해
-`SAFEAID_MIC_DEVICE`, `SAFEAID_SPK_DEVICE`, `SAFEAID_TTS_ORDER`로만 환경별 장치를 덮어쓴다.
+부팅마다 바뀌므로 쓰지 않는다. `/etc/ogtech/audio.env`에 `jetson/audio.env.example`을 복사해
+`OGTECH_MIC_DEVICE`, `OGTECH_SPK_DEVICE`, `OGTECH_TTS_ORDER`로만 환경별 장치를 덮어쓴다.
 
 ```bash
-cd /opt/safeaid/Co-LLM
-sudo install -d /etc/safeaid
-sudo install -m 0644 jetson/audio.env.example /etc/safeaid/audio.env
-sudo install -m 0644 jetson/smartaid-physical-voice.service /etc/systemd/system/
-sudo install -m 0644 jetson/smartaid-device-monitor.service /etc/systemd/system/
+cd /opt/ogtech/Co-LLM
+sudo install -d /etc/ogtech
+sudo install -m 0644 jetson/audio.env.example /etc/ogtech/audio.env
+sudo install -m 0644 jetson/ogtech-physical-voice.service /etc/systemd/system/
+sudo install -m 0644 jetson/ogtech-device-monitor.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now smartaid-physical-voice.service
-sudo systemctl enable --now smartaid-device-monitor.service
+sudo systemctl enable --now ogtech-physical-voice.service
+sudo systemctl enable --now ogtech-device-monitor.service
 ```
 
-두 서비스는 `smartaid-map.service` 뒤에 실행되며, 실제 Jetson·ALSA·STM32 버튼 서비스 설치와 청취 결과는
+두 서비스는 `ogtech-map.service` 뒤에 실행되며, 실제 Jetson·ALSA·STM32 버튼 서비스 설치와 청취 결과는
 `[미검증]`이다.
 
 ## 표현 경우의 수
@@ -190,13 +190,13 @@ python3 -B eval/run_video_scenario.py --runs 20 --output eval/results/video_scen
 ## 실제 하드웨어 인수 하네스
 
 20회 실제 버튼·STT·TTS·스피커 loopback·메모리·swap·네트워크 관측은
-[`docs/07_하드웨어_인수_하네스.md`](docs/07_하드웨어_인수_하네스.md)의 입력 스키마와
+[`docs/07_hardware_acceptance_harness.md`](docs/07_hardware_acceptance_harness.md)의 입력 스키마와
 `eval/run_hardware_acceptance.py`로 판정한다. 하네스는 장치를 흉내 내지 않으며, 관측값이 없거나
 `simulated=true`이면 통과로 올리지 않는다.
 
 ```bash
 python3 -B eval/run_hardware_acceptance.py \
-  --events /var/local/safeaid/jetson_voice_20.jsonl \
+  --events /var/local/ogtech/jetson_voice_20.jsonl \
   --runs 20 \
   --output eval/results/hardware_acceptance_20.json
 ```
@@ -232,13 +232,13 @@ Co-LLM/
 ├── eval/cases_refuse.jsonl            금지 유도 50문장 평가 세트
 ├── eval/run_eval.py                   정확도·혼동·refuse 누출 평가기
 ├── eval/run_hardware_acceptance.py    실제 Jetson 20회 인수 관측 판정기
-├── docs/07_하드웨어_인수_하네스.md      인수 입력 스키마·실행 절차
+├── docs/07_hardware_acceptance_harness.md      인수 입력 스키마·실행 절차
 ├── jetson/
 │   ├── audio.env.example              ALSA 이름·TTS 순서 환경 변수 예시
-│   ├── smartaid-physical-voice.service STM32 음성 버튼 push-to-talk 서비스
-│   └── smartaid-device-monitor.service 선제 음성 알림 서비스
+│   ├── ogtech-physical-voice.service STM32 음성 버튼 push-to-talk 서비스
+│   └── ogtech-device-monitor.service 선제 음성 알림 서비스
 ├── scripts/
-│   ├── safeaid_core.py               규칙 라우터·카드 렌더러
+│   ├── ogtech_core.py               규칙 라우터·카드 렌더러
 │   ├── product_assistant.py          지도 API 연결·최종 문장 확정
 │   ├── product_voice.py              제품 1회 실행기
 │   ├── physical_voice.py             STM32 물리 음성 버튼 push-to-talk 실행기

@@ -3,7 +3,7 @@
 Xavier NX(JetPack 5.1.x, Ubuntu 20.04) 기준입니다. 모든 명령은 Jetson에서 실행합니다.
 명령은 ASCII로만 썼습니다 — 터미널 인코딩 사고를 피하기 위해서입니다.
 
-작업 폴더는 기존 문서와 같은 `~/safeaid_ai/`를 그대로 씁니다.
+작업 폴더는 기존 문서와 같은 `~/ogtech_ai/`를 그대로 씁니다.
 
 ---
 
@@ -12,8 +12,8 @@ Xavier NX(JetPack 5.1.x, Ubuntu 20.04) 기준입니다. 모든 명령은 Jetson�
 ### 0-1. 폴더와 가상환경
 
 ```bash
-mkdir -p ~/safeaid_ai/{stt,tts,llm}   # 모델 설치 위치. 녹음/측정 결과는 scripts/test_rec/ 에 남습니다
-cd ~/safeaid_ai
+mkdir -p ~/ogtech_ai/{stt,tts,llm}   # 모델 설치 위치. 녹음/측정 결과는 scripts/test_rec/ 에 남습니다
+cd ~/ogtech_ai
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
@@ -22,15 +22,15 @@ python -m pip install --upgrade pip
 ### 0-2. 이 저장소의 Co-LLM 폴더를 Jetson으로
 
 ```bash
-cd ~/safeaid_ai
+cd ~/ogtech_ai
 git clone https://github.com/2026-ESW-OGTECH/OGTECH-llm.git
-ln -sfn ~/safeaid_ai/OGTECH-llm/Co-LLM ~/safeaid_ai/colm
+ln -sfn ~/ogtech_ai/OGTECH-llm/Co-LLM ~/ogtech_ai/colm
 ```
 
 Windows에서 파일을 복사해 왔다면 줄바꿈부터 정리합니다. 안 하면 `bash: \r: command not found`가 납니다.
 
 ```bash
-cd ~/safeaid_ai/colm
+cd ~/ogtech_ai/colm
 sed -i 's/\r$//' scripts/*.sh scripts/*.py config.py
 chmod +x scripts/00_check_audio.sh
 ```
@@ -62,7 +62,7 @@ sudo reboot
 마이크와 스피커를 **서로 다른 USB 포트**에 꽂고:
 
 ```bash
-cd ~/safeaid_ai/colm
+cd ~/ogtech_ai/colm
 bash scripts/00_check_audio.sh
 ```
 
@@ -79,12 +79,12 @@ bash scripts/00_check_audio.sh
 - 소리가 아예 안 난다 → `alsamixer` → `F6`으로 스피커 카드 선택 → `Master`/`PCM` 볼륨 확인, `M`으로 음소거 해제
 - `Invalid argument` → `hw:`를 `plughw:`로 바꿨는지 확인
 - `Device or resource busy` → PulseAudio가 물고 있음. `pulseaudio -k` 또는 `systemctl --user stop pulseaudio.socket pulseaudio.service`
-- 재생 중 Jetson 재부팅 → 전원 문제. [`01_하드웨어_확인.md`](01_하드웨어_확인.md) 4절
+- 재생 중 Jetson 재부팅 → 전원 문제. [`01_hardware_check.md`](01_hardware_check.md) 4절
 
 ### 확정한 장치 이름을 `config.py`에 기록
 
 ```bash
-nano ~/safeaid_ai/colm/config.py
+nano ~/ogtech_ai/colm/config.py
 ```
 
 ```python
@@ -100,7 +100,7 @@ SPK_DEVICE = "plughw:CARD=Device_1,DEV=0"
 이미 쓰는 llama.cpp와 같은 ggml 생태계**라서입니다. 파이썬 휠 호환 문제가 아예 없습니다.
 
 ```bash
-cd ~/safeaid_ai/stt
+cd ~/ogtech_ai/stt
 git clone https://github.com/ggml-org/whisper.cpp
 cd whisper.cpp
 cmake -B build -DGGML_CUDA=1
@@ -116,15 +116,15 @@ bash ./models/download-ggml-model.sh small
 ```
 
 `ggml-small.bin`은 f16 약 488 MB입니다. 메모리 예산(STT 온디맨드 ~0.5 GB)에 맞으므로 그대로 씁니다.
-느리면 `base`로 내리고, 못 알아들으면 `medium`으로 올립니다 — 순서는 [`03_STT_후보.md`](03_STT_후보.md) 참조.
+느리면 `base`로 내리고, 못 알아들으면 `medium`으로 올립니다 — 순서는 [`03_stt_candidates.md`](03_stt_candidates.md) 참조.
 
 ### 단독 동작 확인
 
 ```bash
-cd ~/safeaid_ai
+cd ~/ogtech_ai
 arecord -D plughw:CARD=Device,DEV=0 -f S16_LE -r 16000 -c 1 -d 5 samples/mic16k.wav
-time ~/safeaid_ai/stt/whisper.cpp/build/bin/whisper-cli \
-  -m ~/safeaid_ai/stt/whisper.cpp/models/ggml-small.bin \
+time ~/ogtech_ai/stt/whisper.cpp/build/bin/whisper-cli \
+  -m ~/ogtech_ai/stt/whisper.cpp/models/ggml-small.bin \
   -f samples/mic16k.wav -l ko -nt -np
 ```
 
@@ -163,8 +163,8 @@ espeak-ng --voices | grep -i ko
 **여기서 나오는 숫자가 경로 B 예산(≤ 2.0초)입니다.**
 
 ```bash
-cd ~/safeaid_ai/colm
-source ~/safeaid_ai/venv/bin/activate
+cd ~/ogtech_ai/colm
+source ~/ogtech_ai/venv/bin/activate
 python scripts/voice_loop.py --path b
 ```
 
@@ -190,8 +190,8 @@ Enter -> 5초 녹음 -> STT 로드/인식/언로드 -> [고정 문장] -> TTS �
 
 **보는 곳은 `녹음 종료 -> 첫 소리` 한 줄입니다.** 나머지는 어디를 깎을지 정하는 재료입니다.
 
-- 2.0초를 넘으면 → 거의 항상 STT입니다. [`03_STT_후보.md`](03_STT_후보.md)로 갑니다
-- STT는 빠른데 TTS가 느리면 → [`04_TTS_후보.md`](04_TTS_후보.md)로 갑니다
+- 2.0초를 넘으면 → 거의 항상 STT입니다. [`03_stt_candidates.md`](03_stt_candidates.md)로 갑니다
+- STT는 빠른데 TTS가 느리면 → [`04_tts_candidates.md`](04_tts_candidates.md)로 갑니다
 - `MemAvailable`이 1 GB 아래로 내려가면 → 모델 크기를 줄입니다. **swap을 늘려서 통과시키지 않습니다**
 
 연속 측정:
@@ -209,15 +209,15 @@ python scripts/voice_loop.py --path b --repeat 10
 이미 Qwen2.5 1.5B Q4_K_M을 준비해 두었다면 이 단계는 확인만 하면 됩니다.
 
 ```bash
-cd ~/safeaid_ai/llm
+cd ~/ogtech_ai/llm
 ls models/    # qwen2.5-1.5b-instruct-q4_k_m.gguf 가 있어야 함
 ```
 
-`docs/00_동결_결정.md` §5에 동결된 실행 옵션 그대로 띄웁니다.
+`docs/00_frozen_decisions.md` §5에 동결된 실행 옵션 그대로 띄웁니다.
 
 ```bash
-~/safeaid_ai/llm/llama.cpp/build/bin/llama-server \
-  -m ~/safeaid_ai/llm/models/qwen2.5-1.5b-instruct-q4_k_m.gguf \
+~/ogtech_ai/llm/llama.cpp/build/bin/llama-server \
+  -m ~/ogtech_ai/llm/models/qwen2.5-1.5b-instruct-q4_k_m.gguf \
   --host 127.0.0.1 --port 8080 \
   -ngl 99 \
   -fa \
@@ -243,8 +243,8 @@ curl -s http://127.0.0.1:8080/health
 ## 6단계 — 2단 전체 테스트 (10분)
 
 ```bash
-cd ~/safeaid_ai/colm
-source ~/safeaid_ai/venv/bin/activate
+cd ~/ogtech_ai/colm
+source ~/ogtech_ai/venv/bin/activate
 python scripts/voice_loop.py --path a
 ```
 
@@ -258,14 +258,14 @@ python scripts/voice_loop.py --path a
 [TOTAL] 녹음 종료 -> 첫 소리 : 2.26 s   (목표 <= 3.50 s)
 ```
 
-LLM이 1초를 크게 넘으면 프롬프트 길이부터 보세요. `docs/00_동결_결정.md` §5 기준 Xavier prefill은
+LLM이 1초를 크게 넘으면 프롬프트 길이부터 보세요. `docs/00_frozen_decisions.md` §5 기준 Xavier prefill은
 413 tok/s [실측]이므로 **프롬프트 토큰 수가 곧 지연**입니다. 벤치 프롬프트는 60토큰 안에 맞춰 두었습니다.
 
 ---
 
 ## 7단계 — 기록
 
-[`05_테스트_기록표.md`](05_테스트_기록표.md)를 복사해서 채웁니다.
+[`05_test_log.md`](05_test_log.md)를 복사해서 채웁니다.
 `scripts/test_rec/latency.csv`를 같이 첨부하면 어디를 깎을지 바로 판단할 수 있습니다.
 
 ---
@@ -295,4 +295,4 @@ LLM이 1초를 크게 넘으면 프롬프트 길이부터 보세요. `docs/00_�
 2. **경로 B 예산 2.0초가 현실적인가** — STT+TTS 실측
 3. **경로 A 예산 3.5초가 현실적인가** — STT+LLM+TTS 실측
 4. 세 예산 중 어디를 깎아야 하는가 — 단계별 초 단위 분해
-5. `docs/00_동결_결정.md` §10 미결 항목 #2(**한국어 TTS 엔진 확정**)의 후보 3안 중 하나
+5. `docs/00_frozen_decisions.md` §10 미결 항목 #2(**한국어 TTS 엔진 확정**)의 후보 3안 중 하나

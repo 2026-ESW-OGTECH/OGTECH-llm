@@ -6,7 +6,7 @@ Xavier NX(aarch64)에서 한국어 STT를 고를 때 실제로 걸리는 축은 
 
 1. **설치가 되는가** — aarch64 휠이 없어서 못 쓰는 라이브러리가 많습니다
 2. **경로 B 2.0초 안에 들어가는가** — STT가 이 예산의 대부분을 먹습니다
-3. **메모리 0.5 GB 안에 들어가는가** — `docs/00_동결_결정.md` §2 STT 온디맨드 예산
+3. **메모리 0.5 GB 안에 들어가는가** — `docs/00_frozen_decisions.md` §2 STT 온디맨드 예산
 
 세 안을 각각 다른 축에 배치했습니다. 하나가 막히면 다음으로 갑니다.
 
@@ -22,7 +22,7 @@ Xavier NX(aarch64)에서 한국어 STT를 고를 때 실제로 걸리는 축은 
 | aarch64 리스크 | **없음** | 낮음 | **높음** (ctranslate2 휠) |
 
 > **CLI 서브프로세스가 이 프로젝트에 유리한 이유**
-> `docs/00_동결_결정.md` §2는 "STT·TTS는 온디맨드 로드/언로드이며 동시에 올리지 않습니다"를 요구합니다.
+> `docs/00_frozen_decisions.md` §2는 "STT·TTS는 온디맨드 로드/언로드이며 동시에 올리지 않습니다"를 요구합니다.
 > whisper.cpp처럼 CLI를 호출하는 방식은 **프로세스가 끝나면 메모리가 커널에 반납되므로
 > 이 규칙을 공짜로 지킵니다.** 파이썬 인프로세스 방식은 `del model; gc.collect()`를 직접
 > 불러야 하고, 그래도 아레나가 남아 실제 반납이 안 될 수 있습니다.
@@ -31,7 +31,7 @@ Xavier NX(aarch64)에서 한국어 STT를 고를 때 실제로 걸리는 축은 
 
 ## 1안 — whisper.cpp + ggml-small (기본)
 
-설치는 [`02_설치_A_to_Z.md`](02_설치_A_to_Z.md) 2단계 그대로입니다.
+설치는 [`02_install_a_to_z.md`](02_install_a_to_z.md) 2단계 그대로입니다.
 
 ### 크기를 조절하는 순서
 
@@ -49,14 +49,14 @@ Xavier NX(aarch64)에서 한국어 STT를 고를 때 실제로 걸리는 축은 
 ### 양자화 모델로 크기 줄이기
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp
+cd ~/ogtech_ai/stt/whisper.cpp
 bash ./models/download-ggml-model.sh small-q5_1    # 약 190 MB
 ```
 
 `config.py`:
 
 ```python
-WHISPER_CPP_MODEL = "~/safeaid_ai/stt/whisper.cpp/models/ggml-small-q5_1.bin"
+WHISPER_CPP_MODEL = "~/ogtech_ai/stt/whisper.cpp/models/ggml-small-q5_1.bin"
 ```
 
 ### 알려진 함정
@@ -77,7 +77,7 @@ whisper처럼 다국어를 나눠 갖지 않으므로, 같은 크기에서 한�
 ### 설치
 
 ```bash
-source ~/safeaid_ai/venv/bin/activate
+source ~/ogtech_ai/venv/bin/activate
 pip install sherpa-onnx numpy
 ```
 
@@ -91,7 +91,7 @@ pip install --no-binary :all: sherpa-onnx
 ### 모델 받기 — 오프라인(비스트리밍) 버전을 먼저 쓰세요
 
 ```bash
-cd ~/safeaid_ai/stt
+cd ~/ogtech_ai/stt
 wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-korean-2024-06-24.tar.bz2
 tar xvf sherpa-onnx-zipformer-korean-2024-06-24.tar.bz2
 ls sherpa-onnx-zipformer-korean-2024-06-24/
@@ -110,7 +110,7 @@ ls sherpa-onnx-zipformer-korean-2024-06-24/
 
 ```python
 STT_ENGINE = "sherpa_onnx"
-SHERPA_DIR = "~/safeaid_ai/stt/sherpa-onnx-zipformer-korean-2024-06-24"
+SHERPA_DIR = "~/ogtech_ai/stt/sherpa-onnx-zipformer-korean-2024-06-24"
 ```
 
 ### 알려진 함정
@@ -130,7 +130,7 @@ CTranslate2 백엔드라 같은 whisper 모델을 더 빠르게 돌립니다. �
 ### 설치
 
 ```bash
-source ~/safeaid_ai/venv/bin/activate
+source ~/ogtech_ai/venv/bin/activate
 pip install faster-whisper
 python -c "import ctranslate2; print(ctranslate2.__version__)"
 ```
@@ -156,7 +156,7 @@ FW_COMPUTE = "float16"          # cpu일 때는 "int8"
 
 - 첫 실행에서 모델을 인터넷에서 받습니다. **Jetson이 오프라인이면 실패합니다.**
   네트워크가 있을 때 미리 받아 두고 `~/.cache/huggingface`를 유지하세요.
-  최종 제품은 오프라인 동작이 절대 조건입니다 (`docs/00_동결_결정.md` §3 안전 계약 9).
+  최종 제품은 오프라인 동작이 절대 조건입니다 (`docs/00_frozen_decisions.md` §3 안전 계약 9).
 - `beam_size=1`, `vad_filter=False`로 시작하세요. 기본값(beam 5)은 느립니다.
 - `device="cuda"`가 cuDNN 버전 때문에 죽는 경우가 흔합니다. 기능 확인은 `cpu`+`int8`로 먼저 합니다.
 
@@ -167,7 +167,7 @@ FW_COMPUTE = "float16"          # cpu일 때는 "int8"
 ```
 경로 B가 2.0초를 넘는다
  └─ STT가 1.5초 이상 -> 2안(sherpa-onnx) 시도.  CPU만으로 더 빠를 가능성이 높음
- └─ STT는 1초 이하인데 총합 초과 -> 04_TTS_후보.md 로
+ └─ STT는 1초 이하인데 총합 초과 -> 04_tts_candidates.md 로
 
 받아쓰기가 틀린다
  └─ 녹음 wav를 사람이 들어서 알아들을 수 있나?
@@ -180,5 +180,5 @@ FW_COMPUTE = "float16"          # cpu일 때는 "int8"
 
 ## 기록할 것
 
-각 안에 대해 [`05_테스트_기록표.md`](05_테스트_기록표.md)의 STT 표를 채웁니다.
+각 안에 대해 [`05_test_log.md`](05_test_log.md)의 STT 표를 채웁니다.
 **콜드 런과 웜 런을 구분해서** 적으세요. 첫 호출은 모델 로드가 섞여 있어 5~10배 느립니다.

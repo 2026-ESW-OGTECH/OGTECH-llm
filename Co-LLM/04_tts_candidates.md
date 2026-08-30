@@ -1,7 +1,7 @@
 # 04. TTS 후보 3안
 
-`docs/00_동결_결정.md` §10 미결 항목 #2(**한국어 TTS 엔진 확정, 기한 W1**)를 닫기 위한 실험입니다.
-여기서 나온 숫자로 `docs/00_동결_결정.md` §10을 고칩니다.
+`docs/00_frozen_decisions.md` §10 미결 항목 #2(**한국어 TTS 엔진 확정, 기한 W1**)를 닫기 위한 실험입니다.
+여기서 나온 숫자로 `docs/00_frozen_decisions.md` §10을 고칩니다.
 
 ## 이 프로젝트에서 TTS가 만족해야 하는 조건
 
@@ -9,7 +9,7 @@
 
 1. **첫 소리까지의 지연** — 전체 합성 시간이 아닙니다. 경로 A는 문장 단위 스트리밍이므로
    첫 문장만 빨리 나오면 됩니다
-2. **메모리 0.5~1.5 GB** — `docs/00_동결_결정.md` §2 TTS 온디맨드 예산. LLM 상주 1.4 GB와 겹치면 안 됩니다
+2. **메모리 0.5~1.5 GB** — `docs/00_frozen_decisions.md` §2 TTS 온디맨드 예산. LLM 상주 1.4 GB와 겹치면 안 됩니다
 3. **완전 오프라인** — 실행 시 네트워크를 건드리면 탈락입니다 (안전 계약 9)
 4. **바람·빗소리 속에서 알아들리는가** — 자연스러움보다 **명료도**가 우선입니다.
    이건 스펙이 아니라 실제로 들어 봐야 압니다
@@ -78,10 +78,10 @@ ESPEAK_SPEED = 150      # 130~170. 야외에서는 느린 편이 알아듣기 �
 ### 설치
 
 ```bash
-source ~/safeaid_ai/venv/bin/activate
+source ~/ogtech_ai/venv/bin/activate
 pip install piper-tts
 
-mkdir -p ~/safeaid_ai/tts/piper && cd ~/safeaid_ai/tts/piper
+mkdir -p ~/ogtech_ai/tts/piper && cd ~/ogtech_ai/tts/piper
 # 네트워크가 되는 머신에서 받아 Jetson으로 복사해도 됩니다
 # ko.onnx 와 ko.onnx.json 두 파일이 한 쌍입니다
 ```
@@ -90,7 +90,7 @@ mkdir -p ~/safeaid_ai/tts/piper && cd ~/safeaid_ai/tts/piper
 
 ```bash
 echo "해가 지기까지 40분 남았습니다." | \
-  piper --model ~/safeaid_ai/tts/piper/ko.onnx --output_file /tmp/piper.wav
+  piper --model ~/ogtech_ai/tts/piper/ko.onnx --output_file /tmp/piper.wav
 aplay -D plughw:CARD=Device_1,DEV=0 /tmp/piper.wav
 ```
 
@@ -101,7 +101,7 @@ aplay -D plughw:CARD=Device_1,DEV=0 /tmp/piper.wav
 
 ```python
 TTS_ENGINE = "piper"
-PIPER_MODEL = "~/safeaid_ai/tts/piper/ko.onnx"
+PIPER_MODEL = "~/ogtech_ai/tts/piper/ko.onnx"
 ```
 
 ---
@@ -114,8 +114,8 @@ MyShell의 MeloTTS는 **한국어를 공식 지원**하고 MIT 라이선스입�
 ### 설치 — 순서를 지키세요
 
 ```bash
-source ~/safeaid_ai/venv/bin/activate
-cd ~/safeaid_ai/tts
+source ~/ogtech_ai/venv/bin/activate
+cd ~/ogtech_ai/tts
 git clone https://github.com/myshell-ai/MeloTTS.git
 cd MeloTTS
 pip install -e .
@@ -161,7 +161,7 @@ MELO_SPEED = 1.0
 
 ## Kokoro-82M에 대해 — 확인이 필요합니다
 
-`docs/00_동결_결정.md` §10 미결 항목 #2는 후보로 `MeloTTS-Korean / Kokoro-82M / espeak-ng`를 적어 두었습니다.
+`docs/00_frozen_decisions.md` §10 미결 항목 #2는 후보로 `MeloTTS-Korean / Kokoro-82M / espeak-ng`를 적어 두었습니다.
 그런데 **Kokoro-82M v1.0의 공식 `lang_code` 목록에 한국어가 있는지 확인되지 않았습니다** [미검증].
 2차 출처마다 설명이 엇갈립니다.
 
@@ -171,7 +171,7 @@ MELO_SPEED = 1.0
 python -c "from kokoro import KPipeline; KPipeline(lang_code='k')" 2>&1 | tail -5
 ```
 
-- 한국어 코드가 없다면 → **후보에서 빼고** `docs/00_동결_결정.md` §10 미결 항목 #2를 고칩니다.
+- 한국어 코드가 없다면 → **후보에서 빼고** `docs/00_frozen_decisions.md` §10 미결 항목 #2를 고칩니다.
   그 자리에 Piper(한국어 커뮤니티 모델)를 넣습니다
 - 있다면 → 4번째 후보로 같은 방식으로 측정합니다
 
@@ -193,5 +193,5 @@ python -c "from kokoro import KPipeline; KPipeline(lang_code='k')" 2>&1 | tail -
 
 ## 기록할 것
 
-[`05_테스트_기록표.md`](05_테스트_기록표.md)의 TTS 표를 채웁니다.
+[`05_test_log.md`](05_test_log.md)의 TTS 표를 채웁니다.
 지연 숫자와 함께 **"알아들었는가"를 5점으로** 꼭 적으세요. 이 항목이 최종 결정을 좌우합니다.

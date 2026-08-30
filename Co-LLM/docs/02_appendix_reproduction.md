@@ -1,6 +1,6 @@
 # 부록 A — 재현 절차
 
-본문 [`01_본문.md`](01_본문.md)의 모든 수치를 다시 만들어 내는 절차입니다.
+본문 [`01_main.md`](01_main.md)의 모든 수치를 다시 만들어 내는 절차입니다.
 명령은 ASCII로만 썼습니다. 실행은 전부 Jetson입니다.
 
 ---
@@ -11,7 +11,7 @@
 |---|---|
 | 보드 | Jetson Xavier NX 8 GB, JetPack 5.1.x |
 | 사용자 | `kit` (홈 `/home/kit`) |
-| 작업 폴더 | `~/safeaid_ai/stt/whisper.cpp` (빌드), `~/scripts` (측정) |
+| 작업 폴더 | `~/ogtech_ai/stt/whisper.cpp` (빌드), `~/scripts` (측정) |
 | USB 장치 | 마이크 Adafruit 3367, 스피커 Adafruit 3369 |
 
 `Co-LLM/scripts/` 폴더를 `~/scripts`로 복사합니다. Windows에서 옮겼다면 줄바꿈부터 정리합니다.
@@ -48,14 +48,14 @@ nvcc --version
 ## A.3 whisper.cpp 빌드
 
 ```bash
-mkdir -p ~/safeaid_ai/stt && cd ~/safeaid_ai/stt && git clone https://github.com/ggml-org/whisper.cpp && cd whisper.cpp
+mkdir -p ~/ogtech_ai/stt && cd ~/ogtech_ai/stt && git clone https://github.com/ggml-org/whisper.cpp && cd whisper.cpp
 ```
 
 **두 플래그를 반드시 함께** 줍니다. `GGML_NATIVE`(기본 ON)가 켜져 있으면
 `GGML_CPU_ARM_ARCH`는 무시됩니다.
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && rm -rf build && cmake -B build -DGGML_CUDA=1 -DCMAKE_CUDA_ARCHITECTURES=72 -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+fp16+dotprod
+cd ~/ogtech_ai/stt/whisper.cpp && rm -rf build && cmake -B build -DGGML_CUDA=1 -DCMAKE_CUDA_ARCHITECTURES=72 -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+fp16+dotprod
 ```
 
 구성 출력에서 아래 네 줄을 확인합니다.
@@ -68,7 +68,7 @@ cd ~/safeaid_ai/stt/whisper.cpp && rm -rf build && cmake -B build -DGGML_CUDA=1 
 ```
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && time cmake --build build -j4 --config Release
+cd ~/ogtech_ai/stt/whisper.cpp && time cmake --build build -j4 --config Release
 ```
 
 `-j4`인 이유는 `-j$(nproc)`로 하면 8 GB에서 OOM이 나기 때문입니다. 죽으면 `-j2`로 낮추면
@@ -82,23 +82,23 @@ Ubuntu 20.04의 curl 7.68에는 `--retry-all-errors`(7.71+)가 없어 스크립�
 해당 옵션만 제거합니다.
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && sed -i 's/ --retry-all-errors//' models/download-ggml-model.sh
+cd ~/ogtech_ai/stt/whisper.cpp && sed -i 's/ --retry-all-errors//' models/download-ggml-model.sh
 ```
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-ggml-model.sh base && bash ./models/download-ggml-model.sh small
+cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-ggml-model.sh base && bash ./models/download-ggml-model.sh small
 ```
 
 VAD 모델:
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
+cd ~/ogtech_ai/stt/whisper.cpp && bash ./models/download-vad-model.sh silero-v5.1.2
 ```
 
 크기 확인 — base 141 MB, small 465 MB, VAD 864 KB입니다.
 
 ```bash
-ls -lh ~/safeaid_ai/stt/whisper.cpp/models/
+ls -lh ~/ogtech_ai/stt/whisper.cpp/models/
 ```
 
 ---
@@ -156,21 +156,21 @@ cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 영어 샘플로 기준선을 잡습니다.
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && time ./build/bin/whisper-cli -m models/ggml-small.bin -f samples/jfk.wav
+cd ~/ogtech_ai/stt/whisper.cpp && time ./build/bin/whisper-cli -m models/ggml-small.bin -f samples/jfk.wav
 ```
 
 축별 조작:
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-small.bin -f samples/jfk.wav -bo 1 -bs 1 2>&1 | grep -E 'load time|encode time|total time'
+cd ~/ogtech_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-small.bin -f samples/jfk.wav -bo 1 -bs 1 2>&1 | grep -E 'load time|encode time|total time'
 ```
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-small.bin -f samples/jfk.wav -bo 1 -bs 1 -nfa 2>&1 | grep -E 'load time|encode time|total time'
+cd ~/ogtech_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-small.bin -f samples/jfk.wav -bo 1 -bs 1 -nfa 2>&1 | grep -E 'load time|encode time|total time'
 ```
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-base.bin -f samples/jfk.wav -bo 1 -bs 1 -ac 600 -ng 2>&1 | grep -E 'load time|encode time|total time'
+cd ~/ogtech_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-base.bin -f samples/jfk.wav -bo 1 -bs 1 -ac 600 -ng 2>&1 | grep -E 'load time|encode time|total time'
 ```
 
 ---
@@ -199,14 +199,14 @@ cd ~/scripts && bash 04_record_set.sh 5 3
 **유휴 15초 동안은 기기를 건드리지 않습니다.**
 
 ```bash
-cd ~/scripts && bash 05_bench.sh base_cpu_vad ~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 450 -bo 1 -bs 1 -nf --vad -vm ~/safeaid_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin
+cd ~/scripts && bash 05_bench.sh base_cpu_vad ~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 450 -bo 1 -bs 1 -nf --vad -vm ~/ogtech_ai/stt/whisper.cpp/models/ggml-silero-v5.1.2.bin
 ```
 
 버스트 클럭 정책으로 재려면 `CLOCKS=1`을 붙입니다 — 스크립트가 `jetson_clocks` → 실행 →
 `--restore`를 자동으로 합니다.
 
 ```bash
-cd ~/scripts && CLOCKS=1 bash 05_bench.sh base_cpu_burst ~/safeaid_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 600 -bo 1 -bs 1
+cd ~/scripts && CLOCKS=1 bash 05_bench.sh base_cpu_burst ~/ogtech_ai/stt/whisper.cpp/models/ggml-base.bin -ng -ac 600 -bo 1 -bs 1
 ```
 
 산출물:
@@ -224,11 +224,11 @@ cd ~/scripts && CLOCKS=1 bash 05_bench.sh base_cpu_burst ~/safeaid_ai/stt/whispe
 정상이면 10~20 runs, 폭주하면 200 runs를 넘습니다.
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-base.bin -f ~/scripts/test_rec/ko_1.wav -l ko -nt -ng -ac 450 -bo 1 -bs 1 -nf
+cd ~/ogtech_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-base.bin -f ~/scripts/test_rec/ko_1.wav -l ko -nt -ng -ac 450 -bo 1 -bs 1 -nf
 ```
 
 ```bash
-cd ~/safeaid_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-base.bin -f ~/scripts/test_rec/ko_1.wav -l ko -nt -ng -ac 450 -bo 1 -bs 1 -nf --vad -vm models/ggml-silero-v5.1.2.bin
+cd ~/ogtech_ai/stt/whisper.cpp && ./build/bin/whisper-cli -m models/ggml-base.bin -f ~/scripts/test_rec/ko_1.wav -l ko -nt -ng -ac 450 -bo 1 -bs 1 -nf --vad -vm models/ggml-silero-v5.1.2.bin
 ```
 
 `fallbacks = 0 p / 0 h`이면 temperature fallback이 아니라 순수 반복 생성입니다.

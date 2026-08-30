@@ -14,7 +14,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from safeaid_core import RuleRouter, SCENARIO_IDS  # noqa: E402
+from ogtech_core import RuleRouter, SCENARIO_IDS  # noqa: E402
 
 
 def load_jsonl(path: Path) -> list[dict[str, str]]:
@@ -33,7 +33,7 @@ def load_jsonl(path: Path) -> list[dict[str, str]]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="SafeAid 14라벨·refuse 평가")
+    parser = argparse.ArgumentParser(description="OGTECH 14라벨·refuse 평가")
     parser.add_argument(
         "--llm",
         action="store_true",

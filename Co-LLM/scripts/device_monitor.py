@@ -138,7 +138,7 @@ def device_events(base_url: str) -> Iterator[dict[str, Any]]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="SafeAid 선제 음성 알림 데몬")
+    parser = argparse.ArgumentParser(description="OGTECH 선제 음성 알림 데몬")
     parser.add_argument("--map-url", default=C.MAP_API_URL)
     parser.add_argument("--tts-order", default=",".join(C.TTS_ENGINE_ORDER))
     parser.add_argument("--no-tts", action="store_true", help="문장만 출력하고 합성하지 않음")

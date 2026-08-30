@@ -9,7 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from safeaid_core import CardRenderer, RuleRouter  # noqa: E402
+from ogtech_core import CardRenderer, RuleRouter  # noqa: E402
 
 
 class VoiceRouterTest(unittest.TestCase):

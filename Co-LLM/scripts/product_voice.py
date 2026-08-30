@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SafeAid 제품 음성 1회 실행기.
+"""OGTECH 제품 음성 1회 실행기.
 
 마이크 또는 --text 입력을 안전 라우터에 보내고, 열거형 지도 명령을 실행한 뒤,
 검수 카드·코드 계산값만 TTS로 읽는다. STT와 TTS는 항상 순차 로드·언로드한다.
@@ -45,7 +45,7 @@ def _produce_sentences(pipeline, text, output_wav, queue, timing):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="SafeAid 제품 음성 실행기")
+    parser = argparse.ArgumentParser(description="OGTECH 제품 음성 실행기")
     parser.add_argument("--text", help="마이크 대신 사용할 한국어 문장")
     parser.add_argument("--input-wav", help="녹음 대신 STT에 넣을 로컬 WAV")
     parser.add_argument(
@@ -142,7 +142,7 @@ def run_once(args: argparse.Namespace, index: int) -> dict[str, object]:
         producer = threading.Thread(
             target=_produce_sentences,
             args=(pipeline, result.speech, output_wav, sentence_queue, timing),
-            name="safeaid-tts-producer",
+            name="ogtech-tts-producer",
             daemon=True,
         )
         producer.start()
