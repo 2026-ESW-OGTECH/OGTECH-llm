@@ -41,14 +41,11 @@ def _resolve_map_root() -> Path:
     for candidate in candidates:
         if (candidate / "map_engine.py").is_file():
             return candidate.resolve()
-    tried = "
-  ".join(str(c) for c in candidates)
+    tried = "\n  ".join(str(c) for c in candidates)
     raise SystemExit(
         "지도 엔진을 찾지 못했습니다. OGTECH-frontend 저장소를 이 저장소와 같은 상위 폴더에 "
-        "clone하거나 OGTECH_MAP_ROOT로 경로를 지정하세요.
-"
-        f"찾아본 경로:
-  {tried}"
+        "clone하거나 OGTECH_MAP_ROOT로 경로를 지정하세요.\n"
+        f"찾아본 경로:\n  {tried}"
     )
 
 

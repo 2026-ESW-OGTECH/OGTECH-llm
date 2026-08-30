@@ -8,6 +8,7 @@ import argparse
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import subprocess
 import sys
 import time
 from typing import Any, Iterator
@@ -43,7 +44,7 @@ class AlertDetector:
 
     @staticmethod
     def _demo_prefix(device: dict[str, Any]) -> str:
-        return "데모 값 기준으로, " if device.get("demo") else ""
+        return C.DEMO_SPEECH_PREFIX if device.get("demo") else ""
 
     def detect(self, device: dict[str, Any]) -> list[ProactiveMessage]:
         messages: list[ProactiveMessage] = []
@@ -52,7 +53,10 @@ class AlertDetector:
         co_key = "alarm" if co.get("alarm") is True and not co.get("stale") else None
         if co_key and self.active["co_alarm"] != co_key:
             ppm = co.get("ppm")
-            value = "확인 불가" if ppm is None else str(round(float(ppm)))
+            try:
+                value = "확인 불가" if ppm is None else str(round(float(ppm)))
+            except (TypeError, ValueError):  # 숫자가 아닌 ppm 도 데몬을 죽이지 않는다
+                value = "확인 불가"
             messages.append(
                 ProactiveMessage(
                     "co_alarm",
@@ -160,10 +164,18 @@ def main() -> int:
                 for message in detector.detect(device):
                     print(f"[{message.kind}] {message.text}")
                     if not args.no_tts:
-                        with exclusive_pipeline():
-                            for result in pipeline.synthesize_sentences(message.text, output):
-                                if not args.no_play:
-                                    E.play(result.path)
+                        try:
+                            with exclusive_pipeline():
+                                for result in pipeline.synthesize_sentences(message.text, output):
+                                    if not args.no_play:
+                                        E.play(result.path)
+                        except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as exc:
+                            # 재생 1회 실패로 데몬이 죽으면 재시작된 새 detector 가 활성 경보를
+                            # 다시 발화한다(크래시-재발화 루프). 기록만 남기고 상태는 유지한다.
+                            print(f"[{message.kind}] 알림 재생 실패: {exc}", file=sys.stderr)
+                            if args.once:
+                                return 1
+                            time.sleep(2.0)
                     if args.once:
                         return 0
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, MapApiError) as exc:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from queue import Queue
+from queue import Full, Queue
 import sys
 import threading
 import time
@@ -46,16 +46,28 @@ except Exception as exc:  # noqa: BLE001 — 하네스 실패가 음성 경로�
 _SYNTHESIS_DONE = object()
 
 
-def _produce_sentences(pipeline, text, output_wav, queue, timing):
+def _queue_put(queue, item, stop_event) -> bool:
+    """소비 루프가 죽어 큐가 가득 차도 영구 블록하지 않는다. 중단 신호면 False."""
+    while not stop_event.is_set():
+        try:
+            queue.put(item, timeout=0.5)
+            return True
+        except Full:
+            continue
+    return False
+
+
+def _produce_sentences(pipeline, text, output_wav, queue, timing, stop_event):
     started = time.monotonic()
     try:
         for result in pipeline.synthesize_sentences(text, output_wav):
-            queue.put(result)
+            if stop_event.is_set() or not _queue_put(queue, result, stop_event):
+                return
     except BaseException as exc:  # 메인 스레드에서 같은 오류로 종료한다.
-        queue.put(exc)
+        _queue_put(queue, exc, stop_event)
     finally:
         timing["tts_s"] = time.monotonic() - started
-        queue.put(_SYNTHESIS_DONE)
+        _queue_put(queue, _SYNTHESIS_DONE, stop_event)
 
 
 def _build_assistant(client: MapApiClient):
@@ -165,39 +177,44 @@ def run_once(args: argparse.Namespace, index: int) -> dict[str, object]:
         order = tuple(item.strip() for item in args.tts_order.split(",") if item.strip())
         pipeline = TtsPipeline(engine_order=order)
         sentence_queue = Queue(maxsize=2)
+        stop_event = threading.Event()
         timing: dict[str, float] = {}
         producer = threading.Thread(
             target=_produce_sentences,
-            args=(pipeline, result.speech, output_wav, sentence_queue, timing),
+            args=(pipeline, result.speech, output_wav, sentence_queue, timing, stop_event),
             name="ogtech-tts-producer",
             daemon=True,
         )
         producer.start()
         engines_used: list[str] = []
         segment_count = 0
-        while True:
-            item = sentence_queue.get()
-            if item is _SYNTHESIS_DONE:
-                break
-            if isinstance(item, BaseException):
-                raise item
-            speech = item
-            segment_count += 1
-            if first_audio_s is None:
-                first_audio_s = time.monotonic() - release_time
-            if speech.engine not in engines_used:
-                engines_used.append(speech.engine)
-            degraded = degraded or speech.degraded
-            quality = "DEGRADED" if speech.degraded else "OK"
-            print(
-                f"[TTS {segment_count}] {speech.engine} · "
-                f"{speech.metrics.duration_s:.2f} s · {quality}"
-            )
-            if speech.errors:
-                print("[TTS ] 폴백 사유: " + " | ".join(speech.errors))
-            if not args.no_play:
-                E.play(speech.path)
-        producer.join()
+        try:
+            while True:
+                item = sentence_queue.get()
+                if item is _SYNTHESIS_DONE:
+                    break
+                if isinstance(item, BaseException):
+                    raise item
+                speech = item
+                segment_count += 1
+                if first_audio_s is None:
+                    first_audio_s = time.monotonic() - release_time
+                if speech.engine not in engines_used:
+                    engines_used.append(speech.engine)
+                degraded = degraded or speech.degraded
+                quality = "DEGRADED" if speech.degraded else "OK"
+                print(
+                    f"[TTS {segment_count}] {speech.engine} · "
+                    f"{speech.metrics.duration_s:.2f} s · {quality}"
+                )
+                if speech.errors:
+                    print("[TTS ] 폴백 사유: " + " | ".join(speech.errors))
+                if not args.no_play:
+                    E.play(speech.path)
+        finally:
+            # 재생 실패로 여기서 빠져나가도 생산 스레드가 put 에 영구 블록하지 않게 한다.
+            stop_event.set()
+            producer.join()
         tts_s = timing.get("tts_s", 0.0)
         tts_engine = ",".join(engines_used)
         print(f"[TTS ] {segment_count}문장 합성 {tts_s:.3f} s")

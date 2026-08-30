@@ -5,12 +5,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=safeaid
-WorkingDirectory=/opt/ogtech
+User=kit
+WorkingDirectory=/home/kit/ogtech/OGTECH-llm
 EnvironmentFile=-/etc/ogtech/llm.env
-ExecStart=/usr/bin/env bash /opt/ogtech/runner/start_llama_server.sh --foreground
-# 기동 뒤 워밍업: 프리픽스를 KV 캐시에 올려 첫 질문의 cold prefill(2~3 s)을 없앤다.
-ExecStartPost=/usr/bin/env bash -c 'sleep 20; cd /opt/ogtech && python3 -m harness.preflight >> /opt/ogtech/results/preflight.log 2>&1 || true'
+ExecStart=/usr/bin/env bash /home/kit/ogtech/OGTECH-llm/runner/start_llama_server.sh --foreground
+# health가 준비될 때까지 기다린 뒤 프리픽스를 KV 캐시에 올린다. 실패를 숨기지 않아 cold 첫 요청을 막는다.
+ExecStartPost=/home/kit/ogtech/OGTECH-llm/runner/warmup_llm.sh
 Restart=on-failure
 RestartSec=3
 LimitMEMLOCK=infinity

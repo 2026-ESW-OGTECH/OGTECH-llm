@@ -20,7 +20,7 @@
   → 확실한 생명 관련 라벨은 LLM 없이 고정 카드
   → 나머지만 Qwen2.5 1.5B가 JSON Schema로 라벨 1개 분류
   → 검수 카드 또는 코드 계산 장치값으로 발화문 확정
-  → 고정 녹음 / MeloTTS / Piper / espeak-ng 순차 폴백
+  → 고정 녹음 / sherpa-onnx KSS(여성) / MeloTTS / Piper / espeak-ng 순차 폴백
   → 동적 엔진이 모두 실패하면 고정 실패 안내 WAV를 한 번만 재생
   → WAV 품질 검사·음량 정규화·캐시
   → 첫 문장 WAV 즉시 재생 + 재생 중 다음 문장 합성 큐
@@ -111,7 +111,11 @@ bash scripts/07_product_voice.sh --tts-order espeak
 ```
 
 `espeak-ng` 한국어는 합성 약 60 ms지만 청취자가 내용을 알아듣지 못했다 `[실측]`. 따라서 위 명령은
-배관 확인 전용이다. 촬영·제품 기본은 `melotts,piper,espeak`이며, 첫 엔진 실패 이유와 `DEGRADED` 상태를
+배관 확인 전용이다. 제품 기본은 `sherpa,melotts,piper,espeak`(2026-08-30 Jetson 실기는 `sherpa,espeak`)이며,
+`sherpa`는 sherpa-onnx VITS `vits-mimic3-ko_KO-kss_low`(KSS 여성 단일 화자, CPU ONNX Runtime)다. Jetson 실측:
+모델 로드 3.0 s, 문장당 합성 0.6~1.6 s(2~6 s 오디오), 22,050 Hz 모노 `[실측 2026-08-30]`. 잡음 스케일 0.4/0.6,
+길이 스케일 1.22(오전 1.1에서 사용자 청취 "너무 빠르다" 지적으로 0.9배속, 발화 길이 약 +10% `[실측 2026-08-30 오후]`)로 야외 명료도 쪽으로 튜닝했고, `config.py`의 `SHERPA_TTS_*`와 `OGTECH_SHERPA_TTS_*`
+환경변수로 바꾼다. 속도는 `SHERPA_TTS_LENGTH_SCALE` 한 곳으로만 조절한다 — sherpa-onnx는 `speed≠1.0`이면 length_scale을 `1/speed`로 덮어쓰므로(실측: ls 1.1에서 speed 0.9 → +4%, 0.8 → +14%) `SHERPA_TTS_SPEED`는 1.0을 유지한다. 속도·화자 파라미터는 TTS 캐시 키에 들어가므로 바꾸면 옛 클립이 재생되지 않고, 고정 클립(`assets/audio/*.wav`)은 같은 설정으로 다시 렌더링해 교체한다(2026-08-30 1.22로 교체). 첫 엔진 실패 이유와 `DEGRADED` 상태를
 숨기지 않는다. Piper 한국어 모델은 배포 라이선스를 확인한 파일만 설치한다.
 
 ## TTS 품질 계약
@@ -135,8 +139,30 @@ bash scripts/07_product_voice.sh --tts-order espeak
 부팅마다 바뀌므로 쓰지 않는다. `/etc/ogtech/audio.env`에 `jetson/audio.env.example`을 복사해
 `OGTECH_MIC_DEVICE`, `OGTECH_SPK_DEVICE`, `OGTECH_TTS_ORDER`로만 환경별 장치를 덮어쓴다.
 
+sherpa-onnx 여성 음성 설치(실기 `kit`, 온라인 1회):
+
 ```bash
-cd /opt/ogtech/Co-LLM
+pip3 install --user sherpa-onnx
+mkdir -p ~/ogtech_ai/tts/sherpa && cd ~/ogtech_ai/tts/sherpa   # 구 설치는 ~/safeaid_ai/tts/sherpa
+curl -L -o kss.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-mimic3-ko_KO-kss_low.tar.bz2
+tar xjf kss.tar.bz2 && rm kss.tar.bz2
+```
+
+KSS 데이터셋 계열 음성은 비상업 조건(CC BY-NC-SA)이 붙을 수 있으므로 상업 배포 전 라이선스를 확인한다.
+
+2026-08-30 실기(Jetson, 사용자 `kit`)에서 확인한 사항:
+
+- 마이크는 `AB13X USB Audio`(카드 id `Audio`), 스피커는 Jieli `UACDemoV1.0`(카드 id `UACDemoV10`)으로 잡혔다.
+  `arecord`/`aplay`는 두 장치 모두 정상이었고, 스피커 PCM 믹서가 0%로 잡혀 있어 85%로 올리고 `alsactl store`로 저장했다.
+- 키오스크 Firefox가 PulseAudio로 같은 USB 스피커를 열고 있으면 `plughw:` 직접 접근은 `Device or resource busy`로
+  실패한다(재현됨). 그래서 실기 `~/.config/ogtech/audio.env`는 `OGTECH_MIC_DEVICE=pulse`, `OGTECH_SPK_DEVICE=pulse`이며
+  `pactl set-default-sink/-source`로 기본 장치를 USB 스피커/마이크에 고정했다.
+- STT는 `whisper-cli -ng`(CPU)만 쓴다. llama-server가 GPU를 점유한 상태에서 GPU 경로는 `cudaMalloc out of memory`로 죽는다.
+- 스피커→마이크 음향 루프백으로 고정 안내 클립을 녹음하면 음량은 충분했지만(RMS 732) base 모델 전사는 틀렸다.
+  원본 클립 직접 전사는 정확하므로 소형 스피커 경로의 한계이며, 사람 발화로 하는 마이크 STT 검수는 `[미검증]`이다.
+
+```bash
+cd /home/kit/ogtech/OGTECH-llm/Co-LLM
 sudo install -d /etc/ogtech
 sudo install -m 0644 jetson/audio.env.example /etc/ogtech/audio.env
 sudo install -m 0644 jetson/ogtech-physical-voice.service /etc/systemd/system/
@@ -144,6 +170,16 @@ sudo install -m 0644 jetson/ogtech-device-monitor.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now ogtech-physical-voice.service
 sudo systemctl enable --now ogtech-device-monitor.service
+```
+
+`sudo` 설치 권한이 없는 `kit` 실기 환경에서는 `jetson/user/*.service`와 사용자 환경 파일을 쓴다.
+
+```bash
+mkdir -p ~/.config/ogtech ~/.config/systemd/user
+cp jetson/audio.env.example ~/.config/ogtech/audio.env
+cp jetson/user/*.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now ogtech-physical-voice.service ogtech-device-monitor.service
 ```
 
 두 서비스는 `ogtech-map.service` 뒤에 실행되며, 실제 Jetson·ALSA·STM32 버튼 서비스 설치와 청취 결과는
@@ -167,7 +203,7 @@ python3 eval/run_eval.py
 python3 eval/run_eval.py --llm   # Jetson의 로컬 llama-server까지 포함
 ```
 
-현재 외부 모델 없이 실행하는 계약 테스트 결과는 `55/55` 통과 `[실측]`이다. repeat store v2와 MAP 음성 경계는
+현재 계약 테스트 결과는 `59/59` 통과 `[실측: 2026-08-30, PC·Jetson Python 3.8]`이다. repeat store v2와 MAP 음성 경계는
 `test_repeat_uses_only_previous_verified_safe_response`, `test_forged_safe_prefix_store_is_not_replayed`,
 `test_store_with_extra_speech_field_is_rejected_even_with_valid_provenance`,
 `test_store_rejects_impossible_map_action_status_pair`,

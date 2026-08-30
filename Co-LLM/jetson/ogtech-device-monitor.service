@@ -5,12 +5,12 @@ Requires=ogtech-map.service
 
 [Service]
 Type=simple
-User=safeaid
+User=kit
 SupplementaryGroups=audio
-WorkingDirectory=/opt/ogtech/Co-LLM
+WorkingDirectory=/home/kit/ogtech/OGTECH-llm/Co-LLM
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-/etc/ogtech/audio.env
-ExecStart=/opt/ogtech/Co-LLM/.venv/bin/python /opt/ogtech/Co-LLM/scripts/device_monitor.py
+ExecStart=/usr/bin/python3 /home/kit/ogtech/OGTECH-llm/Co-LLM/scripts/device_monitor.py
 Restart=on-failure
 RestartSec=2
 

@@ -21,6 +21,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config as C  # noqa: E402
 
 
+def _numpy_pcm16(raw: bytes):
+    """numpy가 있으면 PCM 연산을 C 루프로 넘긴다. 미설치 환경은 기존 array 경로를 쓴다."""
+    try:
+        import numpy as np
+    except ImportError:
+        return None
+    return np.frombuffer(raw, dtype="<i2").astype(np.int32)
+
+
 @dataclass(frozen=True)
 class WavMetrics:
     sample_rate: int
@@ -95,16 +104,28 @@ def inspect_wav(path: str | Path) -> WavMetrics:
         raise RuntimeError("TTS 출력은 16비트 PCM WAV여야 합니다")
     if channels not in {1, 2} or not 8_000 <= sample_rate <= 96_000:
         raise RuntimeError("TTS WAV 채널 또는 샘플레이트가 허용 범위를 벗어났습니다")
-    samples = array("h")
-    samples.frombytes(raw)
-    if sys.byteorder != "little":
-        samples.byteswap()
-    if not samples or frames <= 0:
+    numpy_samples = _numpy_pcm16(raw)
+    samples = None
+    if numpy_samples is None:
+        samples = array("h")
+        samples.frombytes(raw)
+        if sys.byteorder != "little":
+            samples.byteswap()
+    sample_count = len(numpy_samples) if numpy_samples is not None else len(samples)
+    if sample_count == 0 or frames <= 0:
         raise RuntimeError("TTS WAV에 오디오 프레임이 없습니다")
-    peak = max(abs(int(sample)) for sample in samples)
-    square_sum = sum(int(sample) * int(sample) for sample in samples)
-    rms = math.sqrt(square_sum / len(samples))
-    clipped = sum(1 for sample in samples if abs(int(sample)) >= 32760)
+    if numpy_samples is not None:
+        import numpy as np
+
+        absolute = np.abs(numpy_samples)
+        peak = int(absolute.max())
+        rms = float(np.sqrt(np.mean(numpy_samples.astype(np.float64) ** 2)))
+        clipped = int(np.count_nonzero(absolute >= 32760))
+    else:
+        peak = max(abs(int(sample)) for sample in samples)
+        square_sum = sum(int(sample) * int(sample) for sample in samples)
+        rms = math.sqrt(square_sum / sample_count)
+        clipped = sum(1 for sample in samples if abs(int(sample)) >= 32760)
     duration = frames / float(sample_rate)
     metrics = WavMetrics(
         sample_rate=sample_rate,
@@ -112,7 +133,7 @@ def inspect_wav(path: str | Path) -> WavMetrics:
         duration_s=duration,
         peak_ratio=peak / 32768.0,
         rms_ratio=rms / 32768.0,
-        clipped_ratio=clipped / len(samples),
+        clipped_ratio=clipped / sample_count,
     )
     if not C.TTS_MIN_DURATION_S <= duration <= C.TTS_MAX_DURATION_S:
         raise RuntimeError("TTS WAV 길이가 허용 범위를 벗어났습니다")
@@ -132,25 +153,40 @@ def normalize_pcm16(source: str | Path, destination: str | Path) -> WavMetrics:
         raw = stream.readframes(stream.getnframes())
     if params.sampwidth != 2 or params.comptype != "NONE":
         raise RuntimeError("정규화는 16비트 PCM WAV만 지원합니다")
-    samples = array("h")
-    samples.frombytes(raw)
-    if sys.byteorder != "little":
-        samples.byteswap()
-    peak = max((abs(int(sample)) for sample in samples), default=0)
+    numpy_samples = _numpy_pcm16(raw)
+    samples = None
+    if numpy_samples is None:
+        samples = array("h")
+        samples.frombytes(raw)
+        if sys.byteorder != "little":
+            samples.byteswap()
+        peak = max((abs(int(sample)) for sample in samples), default=0)
+    else:
+        import numpy as np
+
+        peak = int(np.abs(numpy_samples).max()) if len(numpy_samples) else 0
     if peak <= 0:
         raise RuntimeError("TTS WAV가 무음입니다")
     target_peak = int(32767 * C.TTS_TARGET_PEAK_RATIO)
     gain = min(C.TTS_MAX_GAIN, target_peak / peak)
-    normalized = array("h", (
-        max(-32768, min(32767, int(round(int(sample) * gain)))) for sample in samples
-    ))
-    if sys.byteorder != "little":
-        normalized.byteswap()
+    if numpy_samples is not None:
+        import numpy as np
+
+        normalized_bytes = np.clip(
+            np.rint(numpy_samples.astype(np.float32) * gain), -32768, 32767
+        ).astype("<i2").tobytes()
+    else:
+        normalized = array("h", (
+            max(-32768, min(32767, int(round(int(sample) * gain)))) for sample in samples
+        ))
+        if sys.byteorder != "little":
+            normalized.byteswap()
+        normalized_bytes = normalized.tobytes()
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination_path.with_name(f".{destination_path.name}.normalize.tmp")
     with wave.open(str(temporary), "wb") as stream:
         stream.setparams(params)
-        stream.writeframes(normalized.tobytes())
+        stream.writeframes(normalized_bytes)
     temporary.replace(destination_path)
     return inspect_wav(destination_path)
 
@@ -207,6 +243,14 @@ class TtsPipeline:
                 result[str(text).strip()] = path
         return result
 
+    def fixed_clip_for(self, text: str) -> Path | None:
+        """고정 WAV 조회. 데모 접두(config.DEMO_SPEECH_PREFIX)가 붙은 문장은 뗀 키로도 찾는다."""
+        original = str(text or "").strip()
+        fixed = self.fixed_audio.get(original)
+        if fixed is None and original.startswith(C.DEMO_SPEECH_PREFIX):
+            fixed = self.fixed_audio.get(original[len(C.DEMO_SPEECH_PREFIX):].strip())
+        return fixed
+
     def _factory(self, name: str) -> Any:
         if self.engine_factory is not None:
             return self.engine_factory(name)
@@ -214,8 +258,16 @@ class TtsPipeline:
 
         return make_tts(name)
 
+    @staticmethod
+    def voice_signature() -> str:
+        """목소리를 바꾸는 합성 파라미터. 캐시 키에 넣어 속도·화자 변경 뒤 옛 클립이 재생되지 않게 한다."""
+        return "sherpa sid=%s speed=%s ls=%s ns=%s nsw=%s" % (
+            C.SHERPA_TTS_SID, C.SHERPA_TTS_SPEED, C.SHERPA_TTS_LENGTH_SCALE,
+            C.SHERPA_TTS_NOISE_SCALE, C.SHERPA_TTS_NOISE_SCALE_W,
+        )
+
     def _cache_paths(self, normalized_text: str) -> tuple[Path, Path]:
-        identity = "|".join(self.engine_order) + "\n" + normalized_text
+        identity = "|".join(self.engine_order) + "\n" + self.voice_signature() + "\n" + normalized_text
         key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         return self.cache_dir / f"{key}.wav", self.cache_dir / f"{key}.json"
 
@@ -224,7 +276,7 @@ class TtsPipeline:
         normalized = normalize_tts_text(original)
         destination = Path(out_wav)
 
-        fixed = self.fixed_audio.get(original)
+        fixed = self.fixed_clip_for(original)
         if fixed is not None:
             metrics = inspect_wav(fixed)
             _atomic_copy(fixed, destination)
@@ -285,7 +337,8 @@ class TtsPipeline:
                     degraded,
                     tuple(errors),
                 )
-            except Exception as exc:  # 다음 엔진으로 한 번만 폴백한다.
+            except (Exception, SystemExit) as exc:  # 다음 엔진으로 한 번만 폴백한다.
+                # SystemExit: engines.make_tts 의 엔진 이름 오타. 데몬을 죽이지 않고 폴백한다.
                 errors.append(f"{engine_name}: {exc}")
             finally:
                 temporary_path.unlink(missing_ok=True)

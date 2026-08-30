@@ -126,9 +126,9 @@ STT 텍스트
 
 ### 4.2 프롬프트 (`config/system_prompt_ko.txt`, `fewshot_intent.jsonl`)
 
-- 구조: `[system: 역할·라벨 14·동작 16·규칙 5]` → `[few-shot 16턴: 시연 대사 + 대조 예]` → `[user: "발화: …\n확인 대기: 예|아니오"]`. 앞 두 블록은 매 호출 동일 → KV 캐시 적중. 가변부는 user 한 줄.
+- 구조: `[system: 역할·라벨 14·경계·동작 16·규칙 4]` → `[few-shot 14턴: 지도 명령·확인 대기·status·refuse·unknown 대조 예, 평가 문장과 겹침 0]` → `[user: "발화: …\n확인 대기: 예|아니오"]`. 앞 두 블록은 매 호출 동일 → KV 캐시 적중. 가변부는 user 한 줄.
 - pending 여부를 user 턴에 넣는 이유: "네"의 의미가 확인 대기 상태에 따라 달라지고, 그 상태는 MAP `/api/voice`에서 온다.
-- 프리픽스 크기: 시스템 1,510자 + few-shot 16턴 = 2,679자, 휴리스틱 추정 ≈ 1,300 tok `[추정]`(Qwen 토크나이저 실측은 `harness/preflight.py`·`eval/latency_bench.py`의 `/tokenize`). cold prefill ≈ 3.2 s → **워밍업 없이는 첫 질문이 2.0 s 타임아웃에 걸린다.** 운영은 워밍업 후 warm 경로만. 줄이려면 few-shot을 12턴으로(§11-6).
+- 프리픽스 크기(2026-08-30 5판): 시스템 + few-shot 14턴 = 2,811자, 휴리스틱 추정 1,398 tok(상한 1,400, `tests/test_config_assets.py`), Qwen 토크나이저 실측 1,549 tok(`eval/latency_bench.py` `/tokenize`) `[실측 Jetson]`. cold 워밍업 0.748 s(KV 캐시 적재 후 warm 최댓값 0.751 s) → **워밍업 없이는 첫 질문이 느리다.** 운영은 `ogtech-llm-server.service`의 `ExecStartPost=runner/warmup_llm.sh` 뒤 warm 경로만. 경계 규칙을 늘리려면 few-shot을 줄여 상한을 지킨다(5판에서 weather/status 예시 1턴을 빼 1,398로 맞춤). 라벨 정확도 5판 86.07%(`results/intent_eval_jetson.json`).
 - 워밍업: `runner/start_llama_server.sh`가 기동 직후 `preflight`로 1회 호출 → 슬롯 KV 캐시에 프리픽스 적재. 정책 `llm.warmup_on_start=true`.
 
 ### 4.3 지연 예산(추정, Xavier 실측 prefill 413 tok/s · 생성 27 tok/s 기준)
@@ -192,7 +192,15 @@ STT 텍스트
 
 실행 결과 `[실측 2026-08-30, 이 PC, mock/LLM 없음]`: `tests/` 하네스 단위 테스트 통과 · `run_demo_script --llm none --runs 20` 11턴/66변형 통과·20회 동일 · `--llm mock --runs 20` 통과·20회 동일 · mock `timeout/http500/garbage/empty` 전부 고정 카드 폴백 통과 · `Co-LLM/tests` 55 OK(무수정). 결과 파일은 `results/demo_script_*.json`, `results/intent_eval_mock.json`, `results/latency_intent_mock.json`(mock 수치는 무의미, 배관 확인용).
 
-이 PC에는 llama-server·모델이 없다. **실제 모델 수치는 Jetson에서 §7의 뒤 두 러너로 채운다**(`results/`). mock 결과는 배관 검증이지 성능 증거가 아니다.
+Jetson 실측 `[2026-08-30, Xavier NX, Qwen2.5-1.5B Q4_K_M, -ngl 99 -b 128 -ub 128]` — `results/intent_eval_jetson.json`, `results/latency_intent_jetson.json`, `results/demo_script_jetson.json`, `results/preflight.log`:
+
+| 러너 | 결과 |
+|---|---|
+| `run_intent_eval.py --llm <llama-server>` | 라벨 226/273 = **82.78%**, 게이트 90% **미달**, 오류 0, 지연 max 0.817 s · 중앙값 0.632 s. 동작(정보성) 46/92. 프롬프트 판별 이력: 초판 78.60% → 경계 규칙 명문화·압축 81.68% → 라벨 정의에 경계어 편입·few-shot 18→16 **82.78%(채택)** → unknown 예시 2개 추가 78.18%(unknown 과예측, 기각). 잔여 혼동 상위: refuse→unknown 7(약 복용량·병명·수술·프롬프트 지시), sleep_safety→gear 6(버너·난로·CO), water→food 3(식수), unknown→주제 라벨 12(사물 묘사·과거형). |
+| `latency_bench.py --runs 20` | 프리픽스 1,490 tok, cold 0.829 s, warm 최댓값 0.706 s · 중앙값 0.63 s, 예산 2.0 s 통과, 오류 0 |
+| `run_demo_script.py --llm <llama-server> --runs 20` | 11턴 · 변형 66 · 20회 동일 · 통과 |
+
+라벨 게이트 미달의 의미: 이 평가는 규칙을 우회한 **모델 단독** 정확도다. 제품 경로에서는 `refuse`와 생명 라벨을 정본 규칙·고정 카드가 먼저 잡고(§9, `Co-LLM/eval/run_eval.py` 14라벨 280/280·refuse 50/50), LLM은 규칙 미매칭 발화의 enum 2개만 정한다. 90%를 넘기려면 프롬프트만으로는 부족하며(3판 시도 상한 ≈ 83%), 1.5B 모델의 LoRA 미세조정 또는 규칙 범위 확대가 필요하다 — 팀 결정 항목.
 
 ---
 
@@ -200,7 +208,7 @@ STT 텍스트
 
 1. `runner/start_llama_server.sh` (또는 `ogtech-llm-server.service`)로 llama-server 기동 → `preflight`가 health·토큰 수·워밍업 보고.
 2. ✅ 적용(2026-08-30) `Co-LLM/scripts/product_voice.py`: `_build_assistant()`가 `DemoAssistant(router=HARNESS.router, polisher=HARNESS.polisher, classifier=E.classify_scenario)`를 만들고, 하네스 구성 실패 시 기존 `ProductAssistant`로 폴백(`[WARN]` 출력). `physical_voice.py`는 `run_once`를 import하므로 버튼 경로도 같이 바뀐다. `device_monitor.py`는 그대로. E2E: MAP `app.py --gps-mode replay` + `product_voice.py --text … --no-tts`로 베이스캠프 저장→수원 탐색→확인→일몰(361분/18:32)→버너 카드→복귀 경로→체크포인트 통과, LLM 호출 0 `[실측 2026-08-30, 이 PC]`.
-3. Jetson에서 `eval/run_intent_eval.py --llm http://127.0.0.1:8080/…`, `eval/latency_bench.py` 실행 → `results/`에 저장.
+3. ✅ Jetson에서 `eval/run_intent_eval.py --llm http://127.0.0.1:8080/…`, `eval/latency_bench.py`, `run_demo_script.py --runs 20` 실행 → `results/*_jetson.json` 저장(2026-08-30, §7 표). 라벨 게이트는 미달(82.78%).
 4. 결과를 보고 `harness_policy.json` 결정: `allow_life_status_readout`(현재 false), `polish.mode`(현재 off — 켜려면 `llama_server.args`를 `--parallel 2 -c 4096`으로).
 5. 오버레이는 시연 전용으로 유지(정본 미합류). 정본에는 §9의 결함 수정만 반영했고 backend 사본을 바이트 동기화했다(2026-08-30).
 6. ✅ 조직 프로필 File Architecture·LLM 역할 설명 갱신(2026-08-30).
@@ -255,4 +263,4 @@ STT 텍스트
 3. §9 정본 규칙 수정 3건을 시연 전에 반영할지.
 4. 오버레이 패턴을 정본에 합칠지, 시연 전용으로 둘지.
 5. D06/D07 중 DEMO_SCRIPT 2:00 장면에 쓸 질문 확정(둘 다 경로 B, 2.0 s 예산).
-6. few-shot 16턴 유지(프리픽스 ≈1,300 tok, cold 3.2 s) vs 12턴으로 축소(대조 예 4개 제거). 워밍업이 보장되면 warm 지연은 같다.
+6. few-shot 16턴 유지(프리픽스 실측 1,490 tok, cold 워밍업 0.829 s) vs 12턴으로 축소(대조 예 4개 제거). 워밍업이 보장되면 warm 지연은 같다. 2026-08-30 실측: 18턴+긴 경계 규칙은 휴리스틱 상한 1,400을 넘겼고, unknown 예시를 늘리자 unknown 과예측으로 정확도가 떨어졌다(§7).

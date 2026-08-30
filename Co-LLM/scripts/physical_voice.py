@@ -82,7 +82,11 @@ class ArecordSession:
                 self.process.wait(timeout=3.0)
             except subprocess.TimeoutExpired:
                 self.process.terminate()
-                self.process.wait(timeout=2.0)
+                try:
+                    self.process.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()  # 고아 arecord 가 마이크를 계속 쥐지 않게 한다
+                    self.process.wait()
         if self.process.returncode not in {0, -signal.SIGINT}:
             raise RuntimeError(f"arecord 종료 코드가 올바르지 않습니다: {self.process.returncode}")
         if not self.path.is_file() or self.path.stat().st_size <= 44:
@@ -146,7 +150,6 @@ def main() -> int:
     args = parse_args()
     state = VoiceButtonState()
     recorder: ArecordSession | None = None
-    gate = None
     run_index = 0
     print("물리 음성 버튼 대기: 누르는 동안 녹음, 놓으면 STT→안전 분기→TTS")
     while True:
@@ -154,17 +157,11 @@ def main() -> int:
             for event in button_events(args.map_url):
                 transition = state.accept(event)
                 if transition == "start":
-                    gate = exclusive_pipeline()
-                    gate.__enter__()
+                    # press 즉시 녹음한다. 파이프라인 락은 여기서 잡지 않는다 — device_monitor 가
+                    # 경보를 재생 중이면 락 대기(최대 30 s) 동안 발화 앞부분이 녹음에서 빠진다.
                     run_index += 1
                     path = C.RESULT_DIR / f"physical_voice_{run_index:04d}.wav"
-                    try:
-                        recorder = ArecordSession(path, device=args.mic_device)
-                    except BaseException:
-                        gate.__exit__(*sys.exc_info())
-                        gate = None
-                        state.active = False
-                        raise
+                    recorder = ArecordSession(path, device=args.mic_device)
                     print(f"[BUTTON] pressed · 녹음 시작 · event={event.get('event_count')}")
                     continue
                 if transition not in {"finish", "discard"}:
@@ -178,24 +175,20 @@ def main() -> int:
                         print("[BUTTON] 너무 짧거나 긴 발화는 처리하지 않았습니다")
                     else:
                         wav = recorder.stop()
-                        row = run_once(_voice_args(args, wav, release_ns), run_index)
+                        # 락은 STT→TTS 구간에만 건다. 대기 중에도 녹음 파일은 이미 닫혀 있다.
+                        with exclusive_pipeline():
+                            row = run_once(_voice_args(args, wav, release_ns), run_index)
                         print(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
                         if args.once:
                             return 0
                 finally:
                     recorder = None
-                    if gate is not None:
-                        gate.__exit__(None, None, None)
-                        gate = None
             raise TimeoutError("물리 버튼 SSE 연결이 종료되었습니다")
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, MapApiError) as exc:
             print(f"물리 버튼 연결 대기: {exc}", file=sys.stderr)
             if recorder is not None:
                 recorder.discard()
                 recorder = None
-            if gate is not None:
-                gate.__exit__(None, None, None)
-                gate = None
             state.active = False
             time.sleep(2.0)
         except (OSError, RuntimeError, FileNotFoundError, ValueError, subprocess.SubprocessError) as exc:
@@ -203,19 +196,13 @@ def main() -> int:
             if recorder is not None:
                 recorder.discard()
                 recorder = None
-            if gate is not None:
-                gate.__exit__(None, None, None)
-                gate = None
             state.active = False
             if args.once:
                 return 1
         except KeyboardInterrupt:
             if recorder is not None:
                 recorder.discard()
-            if gate is not None:
-                gate.__exit__(None, None, None)
             return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,3 +1,6 @@
+
+from __future__ import annotations
+
 import unittest
 
 from _support import ROOT  # noqa: F401

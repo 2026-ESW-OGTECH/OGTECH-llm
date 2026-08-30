@@ -14,9 +14,9 @@
 4. **바람·빗소리 속에서 알아들리는가** — 자연스러움보다 **명료도**가 우선입니다.
    이건 스펙이 아니라 실제로 들어 봐야 압니다
 
-| | 1안 espeak-ng | 2안 Piper | 3안 MeloTTS-KR |
-|---|---|---|---|
-| 역할 | **기준선·폴백** | **균형** | **자연스러움** |
+| | 1안 espeak-ng | 2안 Piper | 3안 MeloTTS-KR | 4안 sherpa-onnx KSS |
+|---|---|---|---|---|
+| 역할 | **기준선·폴백** | **균형** | **자연스러움** | **실기 기본(2026-08-30)** |
 | 방식 | 포먼트 합성 | VITS(ONNX) | VITS + 형태소 분석 |
 | 모델 크기 | ~수 MB | ~63 MB [추정] | ~수백 MB [추정] |
 | 첫 소리 [추정] | ~0.05 s | ~0.2 s | ~1 s |
@@ -158,6 +158,19 @@ MELO_SPEED = 1.0
 - 첫 실행 시 사전·모델을 내려받습니다. **오프라인 최종 데모 전에 캐시를 미리 채워 두세요.**
 
 ---
+
+## 4안 — sherpa-onnx VITS `vits-mimic3-ko_KO-kss_low` (2026-08-30 실기 채택)
+
+Jetson Xavier NX에 MeloTTS(torch)·Piper 한국어 모델이 없어, pip 휠 하나(4 MB, ONNX Runtime 내장)와
+모델 폴더(67 MB)로 끝나는 sherpa-onnx VITS를 넣었다. 목소리는 Mimic3 `ko_KO/kss_low`(KSS 여성 단일 화자)다.
+
+- 설치: `pip3 install --user sherpa-onnx` + 모델 tar.bz2 해제 → `config.py` `SHERPA_TTS_DIR`
+- 실행: CPU 인프로세스(`provider="cpu"`, 4 threads). llama-server가 GPU를 점유해도 무관
+- 실측(Jetson, 2026-08-30): 모델 로드 3.0 s, 합성 0.6 s/1.9 s 오디오, 1.6 s/6.1 s 오디오, 22,050 Hz
+- 튜닝: `noise_scale 0.4`, `noise_scale_w 0.6`, `length_scale 1.1` → 오후 사용자 청취(너무 빠름)로 `1.22`(0.9배속). `speed` 인자는 length_scale을 1/speed로 덮어쓰므로 쓰지 않는다 `[실측]`. whisper base 역전사로 비교했을 때
+  기본값보다 숫자·문장 끝이 덜 뭉개졌다 `[실측, 대리 지표]`. 사람 청취 판정은 `[미검증]`
+- 한계: 외래어(베이스캠프, 귀환 권고 시각)가 가끔 뭉개진다. 고정 안내 문장은 `fixed_audio.json` 고정 클립으로 낸다
+- 라이선스: KSS 계열은 CC BY-NC-SA 가능성 — 상업 배포 전 확인
 
 ## Kokoro-82M에 대해 — 확인이 필요합니다
 

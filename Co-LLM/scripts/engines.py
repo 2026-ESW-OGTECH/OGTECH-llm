@@ -96,6 +96,19 @@ def whisper_flags(flags=None, vad_model=None):
     return out
 
 
+def _run(cmd, timeout_s, what, **kwargs):
+    """subprocess.run + timeout. 초과는 RuntimeError 로 바꿔 호출자의 기존 처리에 태웁니다.
+
+    run() 은 TimeoutExpired 를 올리기 전에 자식을 kill 하므로 고아 프로세스는 남지 않습니다.
+    """
+    try:
+        return subprocess.run(cmd, timeout=timeout_s, **kwargs)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "%s 가 %.0f초 안에 끝나지 않아 중단했습니다" % (what, timeout_s)
+        ) from None
+
+
 def record(out_wav, seconds=None, device=None):
     """arecord 로 16 kHz 모노 wav 를 녹음합니다."""
     seconds = C.REC_SECONDS if seconds is None else seconds
@@ -110,13 +123,20 @@ def record(out_wav, seconds=None, device=None):
         "-q",
         str(out_wav),
     ]
-    subprocess.run(cmd, check=True)
+    _run(cmd, float(seconds) + C.SUBPROCESS_TIMEOUT_PLAY_EXTRA_S, "arecord", check=True)
     return str(out_wav)
 
 
 def play(wav, device=None):
     device = C.SPK_DEVICE if device is None else device
-    subprocess.run(["aplay", "-D", device, "-q", str(wav)], check=True)
+    try:
+        duration = wav_duration_s(wav)
+    except (OSError, wave.Error, EOFError, ZeroDivisionError):
+        duration = C.SUBPROCESS_TIMEOUT_PLAY_FALLBACK_S
+    _run(
+        ["aplay", "-D", device, "-q", str(wav)],
+        duration + C.SUBPROCESS_TIMEOUT_PLAY_EXTRA_S, "aplay", check=True,
+    )
 
 
 def wav_duration_s(wav):
@@ -205,8 +225,9 @@ class WhisperCppSTT(_Engine):
             "-nt",   # no timestamps
             "-np",   # no prints
         ]
-        out = subprocess.run(
-            cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        out = _run(
+            cmd, C.SUBPROCESS_TIMEOUT_STT_S, "whisper-cli",
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         ).stdout.decode("utf-8", "replace")
         return _clean_asr_text(out)
 
@@ -311,8 +332,9 @@ class EspeakTTS(_Engine):
             "-w", str(out_wav),
             "--stdin",
         ]
-        subprocess.run(
-            cmd, input=text.encode("utf-8"), check=True, stderr=subprocess.PIPE
+        _run(
+            cmd, C.SUBPROCESS_TIMEOUT_ESPEAK_S, "espeak-ng",
+            input=text.encode("utf-8"), check=True, stderr=subprocess.PIPE,
         )
 
 
@@ -334,8 +356,9 @@ class PiperTTS(_Engine):
         # 옵션명이 버전에 따라 바뀝니다. 둘 다 시도합니다.
         for flag in ("--output_file", "--output-file"):
             cmd = [C.PIPER_BIN, "--model", C.PIPER_MODEL, flag, str(out_wav)]
-            p = subprocess.run(
-                cmd, input=text.encode("utf-8"),
+            p = _run(
+                cmd, C.SUBPROCESS_TIMEOUT_TTS_S, "piper",
+                input=text.encode("utf-8"),
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
             if p.returncode == 0 and os.path.exists(out_wav):
@@ -370,7 +393,107 @@ class MeloTTS(_Engine):
         _empty_cuda_cache()
 
 
+def _write_pcm16_wav(out_wav, samples, sample_rate):
+    """float(-1..1) 샘플을 16비트 모노 PCM WAV로 저장합니다. numpy가 있으면 벡터화, 없으면 array 경로."""
+    import wave
+
+    Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import numpy as np
+
+        pcm = np.clip(np.asarray(samples, dtype=np.float32), -1.0, 1.0)
+        frames = (pcm * 32767.0).astype("<i2").tobytes()
+    except ImportError:
+        import array
+
+        buf = array.array("h", (int(max(-1.0, min(1.0, float(x))) * 32767.0) for x in samples))
+        if sys.byteorder != "little":
+            buf.byteswap()
+        frames = buf.tobytes()
+    with wave.open(str(out_wav), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(int(sample_rate))
+        stream.writeframes(frames)
+
+
+class SherpaOnnxTTS(_Engine):
+    """4안. sherpa-onnx VITS(mimic3 ko_KO kss_low, 여성 단일 화자). ONNX Runtime CPU 인프로세스.
+
+    2026-08-30 Jetson 실기 채택. 모델 로드 약 3초, 문장당 합성 0.6~1.6초 `[실측]`.
+    """
+
+    name = "sherpa"
+    # 모델 상주 캐시: 63 MB ONNX를 발화마다 다시 읽으면 첫 소리가 약 3초 늦어진다(Jetson 실측).
+    # STT/TTS 온디맨드 원칙의 예외이며, 메모리 약 150 MB로 LLM 상주 예산과 겹치지 않는다.
+    _cache = {}
+
+    def __init__(self):
+        self.tts = None
+
+    @classmethod
+    def reset_cache(cls):
+        cls._cache.clear()
+
+    def _model_files(self):
+        model_dir = Path(C.SHERPA_TTS_DIR)
+        model = Path(C.SHERPA_TTS_MODEL) if C.SHERPA_TTS_MODEL else None
+        if model is None:
+            candidates = sorted(model_dir.glob("*.onnx")) if model_dir.is_dir() else []
+            model = candidates[0] if candidates else model_dir / "model.onnx"
+        return model_dir, model, model_dir / "tokens.txt", model_dir / "espeak-ng-data"
+
+    def load(self):
+        model_dir, model, tokens, data_dir = self._model_files()
+        if not model.exists() or not tokens.exists():
+            raise RuntimeError(
+                "sherpa-onnx TTS 모델이 없습니다: %s\n"
+                "  vits-mimic3-ko_KO-kss_low 폴더(*.onnx, tokens.txt, espeak-ng-data/)를 %s 에 두거나\n"
+                "  OGTECH_SHERPA_TTS_DIR 로 위치를 지정하세요." % (model, model_dir)
+            )
+        cached = self._cache.get(str(model)) if C.SHERPA_TTS_KEEP_LOADED else None
+        if cached is not None:
+            self.tts = cached
+            return
+        try:
+            import sherpa_onnx
+        except ImportError as exc:
+            raise RuntimeError("sherpa_onnx 파이썬 패키지가 없습니다: pip3 install --user sherpa-onnx (%s)" % exc)
+        vits = sherpa_onnx.OfflineTtsVitsModelConfig(
+            model=str(model),
+            tokens=str(tokens),
+            data_dir=str(data_dir) if data_dir.is_dir() else "",
+            noise_scale=C.SHERPA_TTS_NOISE_SCALE,
+            noise_scale_w=C.SHERPA_TTS_NOISE_SCALE_W,
+            length_scale=C.SHERPA_TTS_LENGTH_SCALE,
+        )
+        config = sherpa_onnx.OfflineTtsConfig(
+            model=sherpa_onnx.OfflineTtsModelConfig(
+                vits=vits, num_threads=C.SHERPA_TTS_THREADS, provider="cpu",
+            ),
+        )
+        if not config.validate():
+            raise RuntimeError("sherpa-onnx TTS 설정 검증 실패: %s" % model_dir)
+        self.tts = sherpa_onnx.OfflineTts(config)
+        if C.SHERPA_TTS_KEEP_LOADED:
+            self._cache[str(model)] = self.tts
+
+    def synth(self, text, out_wav):
+        if self.tts is None:
+            self.load()
+        audio = self.tts.generate(text, sid=C.SHERPA_TTS_SID, speed=C.SHERPA_TTS_SPEED)
+        samples = audio.samples
+        if len(samples) == 0:
+            raise RuntimeError("sherpa-onnx가 빈 오디오를 돌려줬습니다: %r" % text[:40])
+        _write_pcm16_wav(out_wav, samples, audio.sample_rate)
+
+    def unload(self):
+        # 상주 캐시를 쓰면 참조만 놓는다(모델은 프로세스가 끝날 때까지 유지).
+        self.tts = None
+
+
 _TTS = {
+    "sherpa": SherpaOnnxTTS,
     "espeak": EspeakTTS,
     "piper": PiperTTS,
     "melotts": MeloTTS,
@@ -390,6 +513,7 @@ def make_tts(name=None):
 
 def classify_scenario(user_text):
     """14개 라벨 JSON Schema 분류. 실패 시 재시도 없이 unknown을 돌려준다."""
+    import http.client
     import json
     import urllib.error
     import urllib.request
@@ -421,7 +545,10 @@ def classify_scenario(user_text):
         return parsed["scenario_id"], "프롬프트 %s tok / 생성 %s tok" % (
             usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?")
         )
-    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, json.JSONDecodeError):
+    except (
+        urllib.error.URLError, TimeoutError, http.client.IncompleteRead,
+        KeyError, IndexError, TypeError, json.JSONDecodeError,
+    ):  # TypeError: content: null 등 형 불일치 / IncompleteRead: 응답 중간 끊김
         return "unknown", "classifier_failed_no_retry"
 
 # =============================================================

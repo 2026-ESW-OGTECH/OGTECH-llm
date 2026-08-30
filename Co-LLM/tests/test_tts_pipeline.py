@@ -13,6 +13,7 @@ import wave
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from device_monitor import AlertDetector  # noqa: E402
 from tts_pipeline import (  # noqa: E402
     TtsPipeline,
     inspect_wav,
@@ -88,6 +89,23 @@ class TtsPipelineTest(unittest.TestCase):
             self.assertTrue(second.cached)
             self.assertEqual(second.engine, "clear")
 
+    def test_cache_key_changes_when_voice_speed_changes(self) -> None:
+        # 2026-08-30 0.9배속 전환(length_scale 1.1→1.22): 속도·화자 파라미터가 바뀌면 옛 캐시 클립을 재생하면 안 된다.
+        import config as C
+
+        pipeline = TtsPipeline(engine_order=("sherpa", "espeak"), use_cache=False)
+        before = pipeline._cache_paths("안내 문장")
+        old = C.SHERPA_TTS_LENGTH_SCALE
+        C.SHERPA_TTS_LENGTH_SCALE = old + 0.1
+        try:
+            after = pipeline._cache_paths("안내 문장")
+        finally:
+            C.SHERPA_TTS_LENGTH_SCALE = old
+        self.assertNotEqual(before, after)
+        self.assertEqual(before, pipeline._cache_paths("안내 문장"))
+        self.assertIn("ls=1.22", TtsPipeline.voice_signature(), "제품 기본은 0.9배속(length_scale 1.22)")
+        self.assertEqual(C.SHERPA_TTS_SPEED, 1.0, "speed≠1은 sherpa-onnx가 length_scale을 덮어쓴다 — 속도는 length_scale로만")
+
     def test_known_video_phrase_uses_fixed_clean_clip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = TtsPipeline(use_cache=False).synthesize(
@@ -108,6 +126,28 @@ class TtsPipelineTest(unittest.TestCase):
             self.assertEqual(result.engine, "fixed")
             self.assertLess(result.metrics.duration_s, 4.0)
             self.assertEqual(result.metrics.clipped_ratio, 0.0)
+
+    def test_demo_prefixed_arrival_uses_fixed_clip(self) -> None:
+        """device_monitor 의 데모 접두가 붙은 도착 문장도 고정 WAV 로 간다(WORKLOG #32)."""
+        device = {
+            "demo": True,
+            "co": {"alarm": False},
+            "trail": {"status": "on_trail"},
+            "sun": {"status": "scheduled"},
+            "navigation": {
+                "arrival": {"arrived": True, "target": {"id": "destination", "kind": "destination"}}
+            },
+        }
+        message = AlertDetector().detect(device)[0]
+        self.assertTrue(message.text.startswith("데모 값 기준으로, "))
+
+        with tempfile.TemporaryDirectory() as directory:
+            pipeline = TtsPipeline(use_cache=False)
+            self.assertIsNotNone(pipeline.fixed_clip_for(message.text))
+            result = pipeline.synthesize(message.text, Path(directory) / "fixed.wav")
+
+            self.assertEqual(result.engine, "fixed")
+            self.assertFalse(result.degraded)
 
     def test_product_manifest_has_audible_all_engine_failure_clip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

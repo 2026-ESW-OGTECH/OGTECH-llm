@@ -1,3 +1,6 @@
+
+from __future__ import annotations
+
 import json
 from pathlib import Path
 import unittest
@@ -113,7 +116,7 @@ class ConfigAssetsTest(unittest.TestCase):
 
     def test_llama_args_keep_frozen_options(self) -> None:
         text = (CONFIG_DIR / "llama_server.args").read_text(encoding="utf-8")
-        for flag in ("-fa", "--cache-type-k q8_0", "--cache-type-v q8_0", "--cache-reuse 256", "--mlock", "-b 512", "-ub 512"):
+        for flag in ("--flash-attn on", "--cache-type-k q8_0", "--cache-type-v q8_0", "--cache-reuse 256", "--mlock", "-b 128", "-ub 128"):
             self.assertIn(flag, text)
 
 
