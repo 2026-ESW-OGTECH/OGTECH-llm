@@ -38,7 +38,7 @@ Co-LLM/                        ★ 실행 파이프라인과 검증 (이 저장�
 │  ├─ pipeline_gate.py         키워드 게이트 (모델 도달 전 차단)
 │  ├─ tts_pipeline.py          문장 단위 스트리밍 TTS
 │  ├─ product_assistant.py     카드 선택과 문장 조립
-│  ├─ device_monitor.py        장치 상태 감시
+│  ├─ device_monitor.py        장치 상태 감시 · CO 경보음(비프)+음성
 │  ├─ ogtech_core.py          규칙 라우터 · 검수 카드 문장 조립 (LLM 미사용)
 │  └─ engines.py · voice_loop.py · stt_prompt.txt
 ├─ config/
