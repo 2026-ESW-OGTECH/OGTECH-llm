@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""지도 SSE를 감시해 CO·트레일·일조·도착 전이를 먼저 말하는 제품 데몬."""
+"""지도 SSE를 감시해 CO·트레일·일조·도착 전이를 먼저 말하는 제품 데몬.
+
+2026-08-31부터 CO 경보음도 여기서 낸다. 종전에는 STM32 부저(PB0)가 울렸으나 부저를
+걷어냈고, 소리는 이 데몬이 스피커로 낸다 — 경보음(비프) 한 번 뒤에 음성 안내가 붙고,
+경보가 지속되는 동안 반복한다. 키오스크 화면은 배너만 띄우고 읽지 않는다(중복 발화와
+브라우저(pulse)·aplay 장치 경합을 피한다).
+"""
 
 from __future__ import annotations
 
 import argparse
+from array import array
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +23,7 @@ from typing import Any, Iterator
 import urllib.error
 import urllib.parse
 import urllib.request
+import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config as C  # noqa: E402
@@ -24,11 +33,59 @@ from product_assistant import LOCAL_HOSTS, MapApiError  # noqa: E402
 from tts_pipeline import TtsPipeline  # noqa: E402
 
 
+# 경보가 걸려 있는 동안 다시 알린다. 부저는 계속 울렸으므로 한 번만 말하고 끝내지 않는다.
+CO_ALARM_REPEAT_S = 20.0
+CO_WARNING_REPEAT_S = 60.0
+
+# 경보음: (주파수 Hz, 반복 수, 소리 길이 s, 사이 간격 s). 부저 패턴을 스피커로 옮긴 것이다.
+TONE_SPECS = {
+    "alarm": (1000.0, 3, 0.18, 0.12),
+    "warning": (660.0, 2, 0.15, 0.15),
+}
+TONE_RATE_HZ = 22050
+TONE_GAIN = 0.55
+TONE_FADE_S = 0.005  # 뚝 끊기며 나는 클릭음을 없앤다
+
+
 @dataclass(frozen=True)
 class ProactiveMessage:
     kind: str
     source_id: str
     text: str
+    sound: str = ""  # TONE_SPECS 키. 비면 음성만 내보낸다
+
+
+def alert_tone(kind: str) -> Path:
+    """경보음 WAV를 한 번 만들어 두고 재사용한다. 없는 종류면 KeyError."""
+    frequency, beeps, on_s, off_s = TONE_SPECS[kind]
+    path = C.RESULT_DIR / f"alert_tone_{kind}.wav"
+    if path.exists():
+        return path
+    fade = max(1, int(TONE_RATE_HZ * TONE_FADE_S))
+    samples = array("h")
+    for beep in range(beeps):
+        count = int(TONE_RATE_HZ * on_s)
+        for index in range(count):
+            gain = TONE_GAIN
+            if index < fade:
+                gain *= index / fade
+            elif index >= count - fade:
+                gain *= (count - index) / fade
+            samples.append(
+                int(32767.0 * gain * math.sin(2.0 * math.pi * frequency * index / TONE_RATE_HZ))
+            )
+        if beep < beeps - 1:
+            samples.extend([0] * int(TONE_RATE_HZ * off_s))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # 쓰다 만 파일을 재생하지 않도록 임시 파일에 쓴 뒤 바꿔 끼운다.
+    temporary = path.with_name(path.name + ".tmp")
+    with wave.open(str(temporary), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(TONE_RATE_HZ)
+        handle.writeframes(samples.tobytes())
+    temporary.replace(path)
+    return path
 
 
 class AlertDetector:
@@ -41,30 +98,52 @@ class AlertDetector:
             "daylight": None,
             "arrival": None,
         }
+        self._co_repeat_at: float | None = None
 
     @staticmethod
     def _demo_prefix(device: dict[str, Any]) -> str:
         return C.DEMO_SPEECH_PREFIX if device.get("demo") else ""
 
-    def detect(self, device: dict[str, Any]) -> list[ProactiveMessage]:
+    def detect(self, device: dict[str, Any], now: float | None = None) -> list[ProactiveMessage]:
+        now = time.monotonic() if now is None else now
         messages: list[ProactiveMessage] = []
         prefix = self._demo_prefix(device)
         co = device.get("co") or {}
-        co_key = "alarm" if co.get("alarm") is True and not co.get("stale") else None
-        if co_key and self.active["co_alarm"] != co_key:
+        stale = co.get("stale") is True
+        if co.get("alarm") is True and not stale:
+            co_key = "alarm"
+        elif co.get("level") == "warning" and not stale:
+            co_key = "warning"
+        else:
+            co_key = None
+        # 경보는 지속되는 동안 반복한다 — 부저를 대신하는 소리라 한 번 말하고 끝내지 않는다.
+        repeat_due = (
+            co_key is not None
+            and self._co_repeat_at is not None
+            and now >= self._co_repeat_at
+        )
+        if co_key and (self.active["co_alarm"] != co_key or repeat_due):
             ppm = co.get("ppm")
             try:
                 value = "확인 불가" if ppm is None else str(round(float(ppm)))
             except (TypeError, ValueError):  # 숫자가 아닌 ppm 도 데몬을 죽이지 않는다
                 value = "확인 불가"
+            if co_key == "alarm":
+                kind, headline, action = "co_alarm", "일산화탄소 경보입니다.", "즉시 환기하고 대피하세요."
+                self._co_repeat_at = now + CO_ALARM_REPEAT_S
+            else:
+                kind, headline, action = "co_warning", "일산화탄소 주의입니다.", "환기하고 상태를 확인하세요."
+                self._co_repeat_at = now + CO_WARNING_REPEAT_S
             messages.append(
                 ProactiveMessage(
-                    "co_alarm",
+                    kind,
                     "SAFE-PROACTIVE-CO",
-                    prefix
-                    + f"일산화탄소 경보입니다. 센서 계측은 {value}피피엠입니다. STM32 물리 경보가 작동 중입니다.",
+                    prefix + f"{headline} 센서 계측은 {value}피피엠입니다. {action}",
+                    sound=co_key,
                 )
             )
+        if co_key is None:
+            self._co_repeat_at = None
         self.active["co_alarm"] = co_key
 
         trail = device.get("trail") or {}
@@ -145,7 +224,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="OGTECH 선제 음성 알림 데몬")
     parser.add_argument("--map-url", default=C.MAP_API_URL)
     parser.add_argument("--tts-order", default=",".join(C.TTS_ENGINE_ORDER))
-    parser.add_argument("--no-tts", action="store_true", help="문장만 출력하고 합성하지 않음")
+    parser.add_argument(
+        "--no-tts", action="store_true", help="문장만 출력하고 합성하지 않음(경보음은 그대로 재생)"
+    )
     parser.add_argument("--no-play", action="store_true")
     parser.add_argument("--once", action="store_true", help="첫 알림을 처리한 뒤 종료")
     return parser.parse_args()
@@ -157,18 +238,23 @@ def main() -> int:
     order = tuple(item.strip() for item in args.tts_order.split(",") if item.strip())
     pipeline = TtsPipeline(engine_order=order)
     output = C.RESULT_DIR / "proactive_alert.wav"
-    print("선제 알림 감시 시작: CO · 트레일 이탈 · 귀환 권고 · 도착")
+    print("선제 알림 감시 시작: CO 경보음·음성 · 트레일 이탈 · 귀환 권고 · 도착")
     while True:
         try:
             for device in device_events(args.map_url):
                 for message in detector.detect(device):
                     print(f"[{message.kind}] {message.text}")
-                    if not args.no_tts:
+                    if not (args.no_tts and args.no_play):
                         try:
                             with exclusive_pipeline():
-                                for result in pipeline.synthesize_sentences(message.text, output):
-                                    if not args.no_play:
-                                        E.play(result.path)
+                                # 경보음 먼저, 이어서 음성. 락 하나 안에 묶어야 그 사이로
+                                # 마이크 녹음(physical_voice)이 끼어들지 않는다.
+                                if message.sound and not args.no_play:
+                                    E.play(alert_tone(message.sound))
+                                if not args.no_tts:
+                                    for result in pipeline.synthesize_sentences(message.text, output):
+                                        if not args.no_play:
+                                            E.play(result.path)
                         except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as exc:
                             # 재생 1회 실패로 데몬이 죽으면 재시작된 새 detector 가 활성 경보를
                             # 다시 발화한다(크래시-재발화 루프). 기록만 남기고 상태는 유지한다.

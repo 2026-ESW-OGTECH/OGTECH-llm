@@ -91,6 +91,10 @@ CO·트레일 이탈·귀환 권고·목적지 도착을 SSE로 계속 감시하
 지도 서버 다음에 별도 데몬을 실행한다. 같은 파일 잠금을 사용하므로 질문용 STT와 경보용 TTS가 동시에
 메모리를 점유하지 않는다.
 
+**CO 경보음은 이 데몬이 낸다**(2026-08-31 STM32 부저 PB0 제거). 경보음(비프) 한 번 뒤에 음성 안내가
+붙고, 경보가 지속되는 동안 반복한다 — ALARM 20초, WARN 60초. 경보음 WAV는 첫 재생 때 만들어
+`RESULT_DIR`에 두고 다시 쓴다. 키오스크 화면은 배너만 띄우고 읽지 않는다(중복 발화 방지).
+
 ```bash
 bash scripts/08_device_monitor.sh
 ```
@@ -278,7 +282,7 @@ Co-LLM/
 │   ├── product_assistant.py          지도 API 연결·최종 문장 확정
 │   ├── product_voice.py              제품 1회 실행기
 │   ├── physical_voice.py             STM32 물리 음성 버튼 push-to-talk 실행기
-│   ├── device_monitor.py              선제 경보 SSE 감시·음성 출력
+│   ├── device_monitor.py              선제 경보 SSE 감시·CO 경보음(비프)+음성 출력
 │   ├── pipeline_gate.py               STT·TTS 순차 실행 잠금
 │   ├── tts_pipeline.py               고품질 TTS·품질 게이트·캐시
 │   ├── engines.py                    STT/TTS/LLM 분류 어댑터

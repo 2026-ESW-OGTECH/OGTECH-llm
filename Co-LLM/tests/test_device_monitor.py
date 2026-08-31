@@ -6,15 +6,22 @@ import io
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
+import wave
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import device_monitor  # noqa: E402
-from device_monitor import AlertDetector  # noqa: E402
+from device_monitor import (  # noqa: E402
+    CO_ALARM_REPEAT_S,
+    CO_WARNING_REPEAT_S,
+    AlertDetector,
+    alert_tone,
+)
 
 
 def base_device() -> dict[str, object]:
@@ -119,6 +126,74 @@ class AlertDetectorTest(unittest.TestCase):
 
             self.assertEqual([item.kind for item in messages], ["co_alarm"], ppm)
             self.assertIn("확인 불가", messages[0].text)
+
+
+class CoAlarmSoundTest(unittest.TestCase):
+    """부저를 걷어낸 뒤 CO 경보음·음성은 이 데몬만 낸다(2026-08-31)."""
+
+    def test_alarm_message_carries_tone_and_action_instead_of_buzzer_claim(self) -> None:
+        device = base_device()
+        device["co"] = {"alarm": True, "stale": False, "ppm": 120}
+
+        message = AlertDetector().detect(device, now=0.0)[0]
+
+        self.assertEqual(message.kind, "co_alarm")
+        self.assertEqual(message.sound, "alarm")
+        self.assertIn("즉시 환기하고 대피하세요", message.text)
+        self.assertNotIn("물리 경보", message.text)  # 부저는 더 이상 없다
+
+    def test_warning_level_is_announced_with_its_own_tone(self) -> None:
+        device = base_device()
+        device["co"] = {"alarm": False, "level": "warning", "stale": False, "ppm": 41}
+
+        messages = AlertDetector().detect(device, now=0.0)
+
+        self.assertEqual([item.kind for item in messages], ["co_warning"])
+        self.assertEqual(messages[0].sound, "warning")
+        self.assertIn("주의", messages[0].text)
+
+    def test_alarm_repeats_while_it_lasts_and_stops_after_clear(self) -> None:
+        detector = AlertDetector()
+        device = base_device()
+        device["co"] = {"alarm": True, "stale": False, "ppm": 120}
+
+        self.assertEqual(len(detector.detect(device, now=0.0)), 1)
+        self.assertEqual(detector.detect(device, now=CO_ALARM_REPEAT_S - 0.1), [])
+        self.assertEqual(len(detector.detect(device, now=CO_ALARM_REPEAT_S)), 1)
+        self.assertEqual(len(detector.detect(device, now=2 * CO_ALARM_REPEAT_S)), 1)
+
+        cleared = base_device()
+        self.assertEqual(detector.detect(cleared, now=3 * CO_ALARM_REPEAT_S), [])
+        self.assertEqual(detector.detect(cleared, now=9_000.0), [])
+
+    def test_warning_repeats_less_often_than_alarm(self) -> None:
+        detector = AlertDetector()
+        device = base_device()
+        device["co"] = {"alarm": False, "level": "warning", "stale": False, "ppm": 41}
+
+        detector.detect(device, now=0.0)
+        self.assertEqual(detector.detect(device, now=CO_ALARM_REPEAT_S), [])
+        self.assertEqual(len(detector.detect(device, now=CO_WARNING_REPEAT_S)), 1)
+
+    def test_stale_sensor_does_not_keep_shouting(self) -> None:
+        detector = AlertDetector()
+        device = base_device()
+        device["co"] = {"alarm": True, "stale": True, "ppm": 120}
+
+        self.assertEqual(detector.detect(device, now=0.0), [])
+
+    def test_tone_is_a_playable_non_silent_wav(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(device_monitor.C, "RESULT_DIR", Path(directory)):
+                for kind in ("alarm", "warning"):
+                    path = alert_tone(kind)
+                    with wave.open(str(path), "rb") as handle:
+                        frames = handle.getnframes()
+                        self.assertEqual(handle.getsampwidth(), 2)
+                        self.assertEqual(handle.getnchannels(), 1)
+                        self.assertGreater(frames / handle.getframerate(), 0.3)
+                        self.assertTrue(any(handle.readframes(frames)))
+                    self.assertEqual(alert_tone(kind), path)  # 두 번째부터는 재사용
 
 
 class _FakeSpeech:
