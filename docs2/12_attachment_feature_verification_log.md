@@ -18,7 +18,7 @@ MAP·음성 소프트웨어의 핵심 경로는 구현했다. 오프라인 지�
 
 - 실제 Jetson Xavier NX에서 MeloTTS/Piper의 한국어 청취 품질, 첫 소리 지연, 메모리 피크 `[미검증]`
 - 실제 Adafruit 또는 I2S 마이크의 `21문장` 연속 STT와 거짓 양성 `0건` 조건 `[미검증]`
-- STM32가 Jetson 전원 OFF 상태에서 CO·GNSS·부저를 계속 감시하는지 `[미검증]`
+- STM32가 Jetson 전원 OFF 상태에서 CO·GNSS를 계속 감시하는지 `[미검증]` (2026-08-31 부저 제거 — 그 구간에는 판정만 유지되고 소리는 없다)
 - STM32 펌웨어가 BMP390 `0x76/0x77`의 `pressure_valid`와 최소 10분 표본 추세를 실제 프레임으로 송신하는 기능은 구현됐지만, 센서 실물·배선·압력 변화까지의 인수 `[미검증]`
 - 물리 음성 버튼·체크포인트 버튼·전원 버튼의 GPIO 연동 `[미검증]`
 - 실제 Jetson·STM32·센서·오디오·실외 환경에서의 `20회` 연속 시연 `[미검증]`
@@ -49,7 +49,7 @@ MAP·음성 소프트웨어의 핵심 경로는 구현했다. 오프라인 지�
 | 음성 MAP 제어 | `keyword_rules.yaml`, `product_assistant.py` | 자연어 | `clear_destination`를 포함한 열거형 action만 MAP API로 전송 | 화면 SSE·VOICE 상태·TTS | 소프트웨어 완료 |
 | 생명 관련 응답 | `ogtech_core.py`, `survival_cards.json` | 안전 키워드 | LLM 우회, 검수 카드 직행 | 고정 절차 문장 | 소프트웨어 완료 |
 | 일반 질문 분류 | `engines.py`, `ogtech_core.py` | 규칙이 놓친 저위험 발화 | Qwen2.5가 JSON Schema의 라벨 하나만 생성 | 선택된 고정 카드 | 하네스 완료, 실제 모델 평가 대기 |
-| 선제 경보 | `device_monitor.py` | MAP 장치 SSE | CO·트레일·일조·도착 전이만 1회 알림 | 고정 경보 TTS | 소프트웨어 완료, 실 센서 대기 |
+| 선제 경보 | `device_monitor.py` | MAP 장치 SSE | 트레일·일조·도착은 전이마다 1회, CO는 경보음(비프)+음성을 지속 반복(ALARM 20초·WARN 60초) | 생성 경보음 + 고정 경보 TTS | 젯슨 실기 재생 확인(2026-08-31), 실 CO 센서 경보 대기 |
 | 깨끗한 TTS | `tts_pipeline.py`, `fixed_audio.json` | 확정된 고정 문장 | 고정 WAV 우선, 이후 MeloTTS→Piper→espeak, 품질 게이트·정규화·캐시·하네스에 구성된 테스트 엔진 전부 실패 고정 fallback | 문장별 WAV | 배관·고정 WAV 완료, 실제 Jetson 청취 대기 |
 
 ---
@@ -368,7 +368,7 @@ python -B eval/run_hardware_acceptance.py \
 3. 버튼 해제부터 첫 소리까지 경로 B 최대 `2.0초` 이내 `[출처: 목표]`
 4. 경로 A 최대 `3.5초` 이내 `[출처: 목표]`
 5. 음성 `20회` 연속 동일 조건 성공 `[출처: 데모 완료 조건]`
-6. Jetson 전원을 끈 채 CO 경보·진동/부저·GNSS 기록 지속 `[미검증]`
+6. Jetson 전원을 끈 채 CO 판정 유지·GNSS 기록 지속 `[미검증]` (소리는 Jetson 스피커라 전원 OFF 구간에는 없다)
 7. 실제 야외 보행에서 경로 이탈·체크포인트·베이스캠프·도착·일조 경고 검증 `[미검증]`
 8. STM32 `PA0/PA1/PA4` edge와 SSE·push-to-talk 전달, `PC9` 정상 종료 handshake `[미검증]`
 9. `trail_alert`/`trail_caution` 진동, CRC ACK, 5초 watchdog의 실제 반복 동작 `[미검증]`
