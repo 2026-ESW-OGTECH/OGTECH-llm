@@ -67,7 +67,9 @@ class AlertDetectorTest(unittest.TestCase):
 
         self.assertEqual([item.kind for item in messages[:3]], ["co_alarm", "trail", "daylight"])
         self.assertIn("112피피엠", messages[0].text)
-        self.assertTrue(all(item.text.startswith("데모 값") for item in messages))
+        # CO 는 지도가 샘플이어도 실측 ppm 이라 데모 접두사를 붙이지 않는다.
+        self.assertFalse(messages[0].text.startswith("데모 값"))
+        self.assertTrue(all(item.text.startswith("데모 값") for item in messages[1:]))
 
     def test_accuracy_unknown_large_offset_is_spoken_as_possibility(self) -> None:
         detector = AlertDetector()
@@ -152,6 +154,16 @@ class CoAlarmSoundTest(unittest.TestCase):
         self.assertEqual(messages[0].sound, "warning")
         self.assertIn("주의", messages[0].text)
 
+    def test_real_measurement_is_never_announced_as_demo(self) -> None:
+        """device.demo 는 "지도가 샘플"이라는 뜻이다 — ppm 은 어느 쪽이든 센서 실측이다."""
+        device = base_device()
+        device["demo"] = True
+        device["co"] = {"alarm": True, "stale": False, "ppm": 150}
+
+        message = AlertDetector().detect(device, now=0.0)[0]
+
+        self.assertTrue(message.text.startswith("일산화탄소 경보입니다."), message.text)
+
     def test_alarm_repeats_while_it_lasts_and_stops_after_clear(self) -> None:
         detector = AlertDetector()
         device = base_device()
@@ -194,6 +206,70 @@ class CoAlarmSoundTest(unittest.TestCase):
                         self.assertGreater(frames / handle.getframerate(), 0.3)
                         self.assertTrue(any(handle.readframes(frames)))
                     self.assertEqual(alert_tone(kind), path)  # 두 번째부터는 재사용
+
+
+class WarmTtsTest(unittest.TestCase):
+    """첫 경보가 모델 로드를 기다리느라 비프 뒤 6초를 잠자코 있지 않게 한다."""
+
+    def test_fixed_sentences_are_synthesized_up_front(self) -> None:
+        asked: list[str] = []
+
+        class Pipeline:
+            def synthesize_sentences(self, text, _output):
+                asked.append(text)
+                return iter(())
+
+        device_monitor.warm_tts(Pipeline(), Path("/tmp/warmup.wav"))
+
+
+        self.assertEqual(asked, list(device_monitor.WARMUP_SENTENCES))
+        self.assertIn("일산화탄소 경보입니다.", asked)
+
+    def test_model_is_loaded_up_front_when_sherpa_is_used(self) -> None:
+        """캐시가 차 있어도 ppm 문장은 매번 새로 합성한다 — 모델이 올라와 있어야 한다."""
+        loaded = []
+
+        class Engine:
+            def load(self):
+                loaded.append(True)
+
+        class Pipeline:
+            engine_order = ("sherpa", "espeak")
+
+            def synthesize_sentences(self, _text, _output):
+                return iter(())
+
+        with patch.object(device_monitor.E, "SherpaOnnxTTS", Engine):
+            device_monitor.warm_tts(Pipeline(), Path("/tmp/warmup.wav"))
+        self.assertEqual(len(loaded), 1)
+
+    def test_model_load_failure_does_not_stop_the_daemon(self) -> None:
+        class Engine:
+            def load(self):
+                raise RuntimeError("모델 없음")
+
+        class Pipeline:
+            engine_order = ("sherpa",)
+
+            def synthesize_sentences(self, _text, _output):
+                return iter(())
+
+        stderr = io.StringIO()
+        with patch.object(device_monitor.E, "SherpaOnnxTTS", Engine), \
+                contextlib.redirect_stderr(stderr):
+            device_monitor.warm_tts(Pipeline(), Path("/tmp/warmup.wav"))
+        self.assertIn("음성 모델 예열 실패", stderr.getvalue())
+
+    def test_failure_is_reported_and_does_not_raise(self) -> None:
+        class Pipeline:
+            def synthesize_sentences(self, _text, _output):
+                raise RuntimeError("모델 없음")
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            device_monitor.warm_tts(Pipeline(), Path("/tmp/warmup.wav"))
+
+        self.assertIn("음성 예열 실패", stderr.getvalue())
 
 
 class _FakeSpeech:

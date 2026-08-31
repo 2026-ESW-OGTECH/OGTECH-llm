@@ -55,6 +55,36 @@ class ProactiveMessage:
     sound: str = ""  # TONE_SPECS 키. 비면 음성만 내보낸다
 
 
+# 경보 문장 중 ppm 을 뺀 고정 부분. 데몬이 뜰 때 미리 합성해 캐시에 넣어 둔다 —
+# 젯슨 실측(2026-08-31)으로 첫 합성은 모델을 올리느라 6.6 s, 캐시가 차면 0.5 s 였다.
+# 경보가 났는데 비프 뒤 6초를 잠자코 있으면 소리를 놓친다.
+WARMUP_SENTENCES = (
+    "일산화탄소 경보입니다.",
+    "즉시 환기하고 대피하세요.",
+    "일산화탄소 주의입니다.",
+    "환기하고 상태를 확인하세요.",
+)
+
+
+def warm_tts(pipeline: TtsPipeline, output: Path) -> None:
+    """모델을 올리고 고정 문장을 미리 합성한다. 실패는 기록만 하고 감시는 그대로 시작한다."""
+    # 캐시가 이미 차 있으면 합성이 그냥 넘어가 모델은 안 올라온다. 그런데 ppm 문장은
+    # 값이 매번 달라 캐시가 없다 — 모델을 여기서 올려 두지 않으면 첫 경보가 "일산화탄소
+    # 경보입니다" 뒤에 3.8초를 쉰다(젯슨 실측 2026-08-31).
+    if "sherpa" in getattr(pipeline, "engine_order", ()):
+        try:
+            E.SherpaOnnxTTS().load()
+        except (RuntimeError, OSError) as exc:
+            print(f"음성 모델 예열 실패(경보는 그대로 동작): {exc}", file=sys.stderr)
+    for sentence in WARMUP_SENTENCES:
+        try:
+            for _ in pipeline.synthesize_sentences(sentence, output):
+                pass
+        except (subprocess.SubprocessError, RuntimeError, ValueError, OSError) as exc:
+            print(f"음성 예열 실패(경보는 그대로 동작): {exc}", file=sys.stderr)
+            return
+
+
 def alert_tone(kind: str) -> Path:
     """경보음 WAV를 한 번 만들어 두고 재사용한다. 없는 종류면 KeyError."""
     frequency, beeps, on_s, off_s = TONE_SPECS[kind]
@@ -134,11 +164,14 @@ class AlertDetector:
             else:
                 kind, headline, action = "co_warning", "일산화탄소 주의입니다.", "환기하고 상태를 확인하세요."
                 self._co_repeat_at = now + CO_WARNING_REPEAT_S
+            # CO 만 데모 접두사를 붙이지 않는다. device.demo 는 "지도가 샘플"이라는 뜻이고
+            # ppm 은 어느 지도를 띄웠든 STM32 센서 실측이다. 진짜 경보를 "데모 값 기준으로"
+            # 라고 말하면 사람이 대피하지 않는다.
             messages.append(
                 ProactiveMessage(
                     kind,
                     "SAFE-PROACTIVE-CO",
-                    prefix + f"{headline} 센서 계측은 {value}피피엠입니다. {action}",
+                    f"{headline} 센서 계측은 {value}피피엠입니다. {action}",
                     sound=co_key,
                 )
             )
@@ -238,6 +271,8 @@ def main() -> int:
     order = tuple(item.strip() for item in args.tts_order.split(",") if item.strip())
     pipeline = TtsPipeline(engine_order=order)
     output = C.RESULT_DIR / "proactive_alert.wav"
+    if not args.no_tts:
+        warm_tts(pipeline, C.RESULT_DIR / "warmup.wav")
     print("선제 알림 감시 시작: CO 경보음·음성 · 트레일 이탈 · 귀환 권고 · 도착")
     while True:
         try:
