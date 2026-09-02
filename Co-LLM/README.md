@@ -5,6 +5,7 @@
 1. `scripts/product_voice.py`: 실제 제품 경로. STT → 안전 라우터 → 검수 카드·지도 명령 → 고품질 TTS.
 2. `scripts/voice_loop.py`와 `00`~`06` 스크립트: 엔진별 지연·정확도·오디오 장치 벤치.
 3. `scripts/physical_voice.py`와 `09_physical_voice.sh`: STM32 물리 음성 버튼 edge만 받는 push-to-talk 실행기.
+4. `scripts/wake_voice.py`와 `10_wake_voice.sh`: "오지야" 호출어 상시 청취 데몬. 호출어 뒤 발화만 1번 경로에 넘긴다. [아래](#호출어-데몬-오지야)
 
 제품 실행기는 LLM이 경로·방위·거리·생존 절차를 만들지 못하게 한다. 지도 제어는 숫자 필드가 없는
 열거형 `action`만 로컬 지도 서버로 보내며, 최종 음성은 고정 카드 또는 지도·센서 코드가 계산한 값으로만
@@ -282,14 +283,69 @@ Co-LLM/
 │   ├── product_assistant.py          지도 API 연결·최종 문장 확정
 │   ├── product_voice.py              제품 1회 실행기
 │   ├── physical_voice.py             STM32 물리 음성 버튼 push-to-talk 실행기
+│   ├── wake_voice.py                 "오지야" 호출어 상시 청취 데몬 (VAD + whisper 호출어 판별)
 │   ├── device_monitor.py              선제 경보 SSE 감시·CO 경보음(비프)+음성 출력
 │   ├── pipeline_gate.py               STT·TTS 순차 실행 잠금
 │   ├── tts_pipeline.py               고품질 TTS·품질 게이트·캐시
 │   ├── engines.py                    STT/TTS/LLM 분류 어댑터
 │   ├── 07_product_voice.sh            질문용 Jetson 실행 래퍼
 │   ├── 08_device_monitor.sh           선제 경보 Jetson 실행 래퍼
-│   └── 09_physical_voice.sh           물리 음성 버튼 Jetson 실행 래퍼
+│   ├── 09_physical_voice.sh           물리 음성 버튼 Jetson 실행 래퍼
+│   └── 10_wake_voice.sh               호출어 데몬 Jetson 실행 래퍼
 └── tests/                             외부 모델 없이 실행되는 계약 테스트
 ```
 
 실제 음성 WAV와 캐시는 `scripts/test_rec/`에만 만들며 Git에 올리지 않는다.
+
+## 호출어 데몬 (오지야)
+
+`scripts/wake_voice.py`. 물리 음성 버튼 없이 시리처럼 "오지야"를 부르면 "네, 무엇을 도와드릴까요?"로 답하고,
+이어지는 발화를 1번 제품 경로(`product_voice._build_assistant`, DemoAssistant)에 그대로 넘긴다. 화면(`/video/`)은 건드리지
+않는다. 지도 명령 결과는 `/api/voice` 이벤트로 이미 화면에 간다.
+
+```text
+마이크(arecord pulse, 16 kHz raw) → Silero VAD(sherpa-onnx, 32 ms 창) → 발화 WAV(앞 0.25 s·뒤 0.15 s 여유, 1.6 s 미만은 무음 채움)
+  idle          : 0.25~4 s 발화만 whisper → 정규화 문장이 호출어 변형으로 시작하면 세션 시작 (긴 발화는 whisper 를 돌리지 않는다)
+  await_command : 인사말이 끝난 뒤 10 s 안의 발화 → 제품 경로 → 응답. 후보 확인 질문이면 await_confirm(10 s), 아니면 followup(6 s)
+  followup      : 호출어 없이 한 번 더 물을 수 있다. 시간이 지나면 idle
+  재생 중·직후 0.3 s 에 잡힌 발화는 버린다(자기 소리 반응 방지). STT·지도·TTS 는 pipeline_gate 잠금 안에서만 돈다
+```
+
+설정은 `config/wake_voice.json` 하나다.
+
+| 항목 | 내용 |
+|---|---|
+| `wake.*_variants` | Jetson whisper base 가 "오지야"를 받아 적은 변형(2026-09-02 합성음 실측). `exact` 는 발화 전체일 때만, `command_only` 는 뒤에 명령이 붙을 때만 |
+| `stt_prompt_extra_wake` / `_command` | 정본 `stt_prompt.txt` 뒤에 이 프로세스에서만 덧붙이는 프롬프트. 대기 중엔 "오지야.", 세션 중엔 시연 명령 문장. 둘을 합치면 반복 생성이 늘었다 |
+| `lexicon` | 데몬 전용 STT 보정(포스/포수/호술이→호수, 운동화습도→온도와 습도, 내 설정→네 설정). 라우팅 전에만 쓴다 |
+| `confirmation` | 후보 대기 중 긍정·부정 어휘. 지도 서버 후보면 정본 라우터에 "네"/"아니"로 넘기고, 대본 후보면 데몬이 답한다 |
+| `script.lake` | "네, {N}미터 이내에 호수가 있습니다. 목적지로 지정해 드릴까요?" · N 은 기준점→가장 가까운 `water_source` 표식(지도 서버와 같은 `poi_catalog.json`) haversine 을 100 m 올림, `distance_floor_m`(500) 이하면 500. 기준점은 GPS fix, 없으면 `no_fix_reference`(촬영 화면 1·2번 장면의 현재 위치). **GPS 미수신이면 지도 서버가 수원 검색을 거부하므로** 데몬이 대본대로 답하고, 확인("어/네") 시 화면 터치와 같은 `/api/waypoints set` 으로 표식 좌표를 목적지로 등록한 뒤 "목적지가 설정되었습니다." GPS 가 있으면 지도 서버 후보 → `confirm_destination` 경로이며 문구만 같다 |
+| `script.weather` | 온·습도는 `/api/device` `environment`(화면과 같은 값)로 "네, 온도는 24점 1도입니다. 습도는 77퍼센트입니다." 두 절로 말한다. 한 절에 이어 붙이면 "도"가 뭉개지고, 소수점 "24.1"은 sherpa 가 못 읽어 "24점 1"로 적는다(2026-09-02 실기·whisper 되읽기) |
+| `strip_demo_prefix` | 데몬이 읽는 모든 문장에서 "데모 값 기준으로," 를 뺀다(2026-09-02 지시). 제품 경로는 그대로 |
+| `tts.*` | 1.36 = 정본 1.22 의 0.9배속. 응답은 쉼표·문장 단위 구절로 따로 합성해 사이에 0.1 s(문장 사이 0.3 s) 무음을 넣고 **한 WAV 로 이어 한 번에** 재생한다(긴 문장 발음 뭉개짐·짧은 클립이 pulse 시작 지연에 먹히는 문제, 2026-09-02 실기). 머리의 "네"는 정본 속도(1.22). sherpa VITS 는 `speed=1/length_scale` 로 같은 효과(2026-09-02 실측 2.04 s 일치) |
+| `confirmation.short_utterance_max_s` | 확인 질문 뒤 1 s 이하 발화가 빈 문자열로 받아 적히면 긍정으로 본다("어"·"응"은 whisper 가 못 적음, 2026-09-02 실기). 부정은 "아니"·"취소"처럼 말한다 |
+| `timeouts.*` | 대기 창(명령 10 s·확인 10 s·후속 6 s)은 **데몬이 말을 끝낸 시점**부터 잰다. 처리 시각부터 재면 인사말 합성·재생(약 5 s)이 포함돼 사용자가 말을 끝내기 전에 만료된다(2026-09-02 실기 로그) |
+
+제품 화면(`/product/`)의 야간 모드 버튼은 서버 `interface.night` 를 토글한다(화면만 바꾸면 2 s 뒤 스냅샷이 되돌린다 — 2026-09-02 실기).
+화면(`/video/?live=1`)은 좌표·경로가 촬영 시나리오 상수라 서버 웨이포인트를 그리지 않았다. `video_app.js` 의
+`applyServerDestination` 이 페이지가 뜬 뒤 서버 목적지 `saved_at` 이 바뀌면 2번 장면(음성 요청 → 일감호 설정)으로 넘겨
+목적지·경로를 그린다(첫 스냅샷은 기준값). 소리는 데몬만 낸다.
+
+실행·검증:
+
+```bash
+bash scripts/10_wake_voice.sh                    # 마이크 대기, 스피커 출력
+bash scripts/10_wake_voice.sh --no-play          # 응답 WAV 만 만들고 소리는 내지 않음 (OGTECH_WAKE_NO_PLAY=1 과 같음)
+bash scripts/10_wake_voice.sh --input-wavs 오지야.wav 호수.wav 네.wav --once --no-play   # 16 kHz WAV 로 대화 재현
+python3 -m unittest tests.test_wake_voice        # 53개: 호출어 판정·분절·대본 오버레이·상태기계·구절 합성·짧은 확인
+```
+
+이벤트는 `scripts/test_rec/wake_events.jsonl`(`wake / no_wake / command / timeout / ignored_*`)에 남고, 마지막 발화 WAV 는
+`wake_seg_N.wav`, 응답은 `wake_say*.wav` 다. 30 s 마다 `[MIC ] peak` 줄이 찍히며 0 이 계속되면 장치·게인을 의심한다.
+Jetson 사용자 서비스는 `jetson/user/ogtech-wake-voice.service`(`~/.config/ogtech/wake.env` 의 `OGTECH_WAKE_NO_PLAY=1` 이면 무음).
+Silero 모델은 `config.VAD_ONNX_MODEL`(`~/ogtech_ai/stt/silero_vad.onnx`, 구 설치 `~/safeaid_ai/stt/`)이며 없으면 에너지 분절로 내려간다.
+
+2026-09-02 Jetson 검증(합성음 KSS·espeak, `--no-play`): 대본 #1(오지야 → 근처 호수 → 확인 → 목적지 등록·화면 2번 장면 전환) 4/4,
+대본 #2(온·습도) 5/5 + 표현 변형 2종, 한 호흡("오지야 근처에…") 1/1, 부정 발화 3종 무반응, 실마이크 90 s 대기 오작동 0.
+사람 목소리는 사용자가 실기에서 "오지야" 인식을 확인했다(20:21, 마이크 peak 32767 클리핑 — 20~30 cm 거리 권장).
+알려진 한계: whisper 가 같은 어절을 반복 생성하면(합성음 2건) 접기(`collapse_repeats`)로 문장은 살리지만 6 s 가량 늦어진다.

@@ -35,6 +35,7 @@ Co-LLM/                        ★ 실행 파이프라인과 검증 (이 저장�
 ├─ scripts/
 │  ├─ product_voice.py         제품 음성 경로 진입점
 │  ├─ physical_voice.py        물리 버튼 → 음성 질의
+│  ├─ wake_voice.py            "오지야" 호출어 상시 청취 → 인사 → 같은 제품 경로
 │  ├─ pipeline_gate.py         키워드 게이트 (모델 도달 전 차단)
 │  ├─ tts_pipeline.py          문장 단위 스트리밍 TTS
 │  ├─ product_assistant.py     카드 선택과 문장 조립
@@ -44,9 +45,10 @@ Co-LLM/                        ★ 실행 파이프라인과 검증 (이 저장�
 ├─ config/
 │  ├─ survival_cards.json      검수된 고정 카드
 │  ├─ keyword_rules.yaml       키워드 게이트 규칙
+│  ├─ wake_voice.json          호출어 변형·단계별 STT 프롬프트·시연 대본 문구
 │  └─ fixed_audio.json         사전 합성 음성
 ├─ eval/                       14 라벨 분류 · refuse 누출 평가, 하드웨어 인수 러너
-├─ tests/                      단위 테스트 59개
+├─ tests/                      단위 테스트 127개
 ├─ assets/audio/               검수된 고정 안내 음성 (사전 합성 wav)
 └─ jetson/                     systemd 유닛과 오디오 환경 설정
 

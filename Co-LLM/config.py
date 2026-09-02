@@ -109,6 +109,12 @@ WHISPER_CPP_FLAGS = [
     "--vad", "-vm", WHISPER_VAD_MODEL,
 ]
 
+# 호출어 데몬(scripts/wake_voice.py)이 마이크 스트림을 발화 단위로 끊는 Silero VAD(sherpa-onnx ONNX).
+# whisper.cpp 의 ggml VAD 와는 다른 파일입니다. 없으면 에너지 기반 분절로 내려가며 한 번 경고합니다.
+#   curl -L -o ~/ogtech_ai/stt/silero_vad.onnx \
+#     https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+VAD_ONNX_MODEL = _p(os.environ.get("OGTECH_VAD_ONNX", _ai_path("stt/silero_vad.onnx")))
+
 # 초기 프롬프트(컨텍스트 바이어싱)의 정본은 scripts/stt_prompt.txt 한 곳입니다.
 # 셸 스크립트(03/06)와 이 파이썬 경로가 같은 파일을 읽으므로 사본이 갈라지지 않습니다.
 # 환경변수 WHISPER_PROMPT 가 있으면 그쪽이 이깁니다(빈 문자열 = 프롬프트 끄기).

@@ -187,9 +187,16 @@ class _Engine(object):
 # =============================================================
 
 class WhisperCppSTT(_Engine):
-    """1안. CLI 서브프로세스. 언로드가 자동입니다."""
+    """1안. CLI 서브프로세스. 언로드가 자동입니다.
+
+    extra_flags 는 동결 플래그 뒤에 덧붙는 호출자 전용 옵션입니다(호출어 데몬이 config/wake_voice.json 의 stt_extra_flags 를 넘긴다).
+    제품 경로(product_voice/physical_voice)는 비워 두어 동결 구성 그대로 돕니다.
+    """
 
     name = "whisper_cpp"
+
+    def __init__(self, extra_flags=None):
+        self.extra_flags = [str(f) for f in (extra_flags or [])]
 
     def load(self):
         if not os.path.exists(C.WHISPER_CPP_BIN):
@@ -218,6 +225,7 @@ class WhisperCppSTT(_Engine):
         # 7.7초 걸립니다 `[실측]` — 경로 B 예산 2.0초를 혼자 넘깁니다.
         # whisper_flags() 는 VAD 모델이 없을 때만 --vad 를 빼고 경고합니다.
         cmd += whisper_flags()
+        cmd += self.extra_flags
         # 도메인 프롬프트. 셸 스크립트와 같은 stt_prompt.txt 를 읽습니다.
         if C.WHISPER_CPP_PROMPT:
             cmd += ["--prompt", C.WHISPER_CPP_PROMPT]
